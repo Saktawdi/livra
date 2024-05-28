@@ -145,9 +145,9 @@ export default {
   },
   methods: {
     getNoticeTypeLabel(type) {
-      if (type === 1) return "警告";
-      if (type === 2) return "通知";
-      if (type === 3) return "信息";
+      if (type === 1) return "公告";
+      if (type === 2) return "信息";
+      if (type === 3) return "通知";
       return "未知";
     },
     getNoticeTypeClass(type) {
@@ -590,12 +590,12 @@ export default {
 }
 
 .announcement {
-  background-color: #4caf50;
+  background-color: #2196f3;
   color: #fff;
 }
 
 .info {
-  background-color: #2196f3;
+  background-color: #4caf50;
   color: #fff;
 }
 

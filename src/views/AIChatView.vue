@@ -39,7 +39,7 @@
       :talkAc="live2dList[Live2DIndex].talk"></live2D>
     </div>
     <div class="right-box">
-      <div class="chat-container" ref="chatContainer">
+      <div class="chat-container" ref="chatContainer" @scroll="checkScrollBottom">
         <div class="tools-container" v-if="nowChatHistory.length === 0">
           <!-- 栏目：选择模型，角色仓库，pdf分析，换肤 -->
           <div class="toolsBox">
@@ -88,25 +88,30 @@
       </div>
       <!-- 输入框 -->
       <div class="text-container">
-        <div class="text-box">
-          <textarea ref="textarea" v-model="userInput" @keydown.enter="handleEnterKey" class="user-textarea"
-            placeholder="畅你所言，按Enter发送，Shift+Enter换行" :style="{ 'height': textareaHeight }"
-            :disabled="!isTextareaEnabled"></textarea>
-          <div v-if="!isTextareaEnabled" class="loading-overlay">
-            <!-- 加载动画效果 -->
-            <div class="loading-spinner"></div>
+          <div class="text-box">
+            <img v-if="modelSelected==='gpt-4-turbo'" src="../assets/icon/uploadPic.svg" class="text-box-icon text-box-icon-uploadPic" title="上传图片" @click="onUploadPic" />
+            <input type="file" ref="imgFileInput" id="fileInput" accept="image/*" @change="selectedPic">
+            <textarea ref="textarea" v-model="userInput" @keydown.enter="handleEnterKey" class="user-textarea"
+              placeholder="畅你所言，按Enter发送，Shift+Enter换行" :style="{ 'height': textareaHeight }"
+              :disabled="!isTextareaEnabled"></textarea>
+            <div v-if="!isTextareaEnabled" class="loading-overlay">
+              <!-- 加载动画效果 -->
+              <div class="loading-spinner"></div>
+              <img src="../assets/icon/stop.svg" class="text-box-icon-stop" title="中断回答" @click="stopAIRes" />
+            </div>
           </div>
         </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script>
+//TODO：[BUG]不同聊天窗口提问相同问题，切换记录会变成第一个提问的记录样子。
 import calcTextareaHeight from '@/utils/calcTextareaHeight';
 import { showAlter } from "@/utils/showAlter";
 import live2D from "@/components/live2D.vue";
 import { live2dListData } from "@/api/live2DData";
+import { uploadPic } from "@/api/picUpload";
 import { requestConfig } from "@/utils/request";
 import clipboard from 'clipboardy';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf';
@@ -139,6 +144,8 @@ export default {
       ],//历史聊天条目
       userInput: '',   // 用户输入
       isTextareaEnabled: true,
+      isStopStream:false,//AI流式响应对象
+      isBottomScroll:false,//聊天视窗滚动条
       textareaHeight: '32px',
       messages: [
         {
@@ -147,20 +154,29 @@ export default {
         },
       ],
       modelSelected: "deepseek-chat",//模型选择
+      //TODO:远程获取模型list
       modelData: [
         { name: "选择聊天模型", value: null, disabled: true },
-        { name: "DeepSeekChat(又快又强💪)(默认🧐)", value: "deepseek-chat", disabled: false },
-        { name: "GPT-4 (不太稳定)", value: "gpt-4", disabled: false },
+        { name: "DeepSeekChat(快🚀)(默认🧐)", value: "deepseek-chat", disabled: false },
+        { name: "GPT-4-turbo [🔎联网+学术检索+画图](比较慢)", value: "gpt-4-turbo", disabled: false },
+        { name: "kimi-128k[超长上下文📜+🔎联网](快🚀)", value: "moonshot-v1-128k", disabled: false },
+        { name: "DeepSeekCoder[👨‍💻代码特调](快🚀)", value: "deepseek-coder", disabled: false },
+        { name: "GPT-4-1106-preview(强💪💪快🚀)", value: "gpt-4-1106-preview", disabled: false },
+        { name: "GPT-4o(强👍不稳定👀)", value: "gpt-4o", disabled: false },
+        { name: "Claude3(强👍不稳定👀)", value: "claude-3-opus-20240229", disabled: false },
         { name: "GPT-4 Copilot💝", value: "gpt-4-copilot", disabled: false },
         { name: "Gemini Pro✨", value: "gemini-pro", disabled: false },
-        { name: "gpt-3.5-turbo-16k", value: "gpt-3.5-turbo-16k", disabled: false },
         { name: "gpt-3.5-turbo-1106", value: "gpt-3.5-turbo-1106", disabled: false },
         { name: "gpt-3.5-turbo-0613", value: "gpt-3.5-turbo-0613", disabled: false },
         { name: "gpt-3.5-turbo-0301", value: "gpt-3.5-turbo-0301", disabled: false },
         { name: "gpt-3.5-turbo", value: "gpt-3.5-turbo", disabled: false },
+        { name: "gpt-3.5-turbo-16k", value: "gpt-3.5-turbo-16k", disabled: true },
+        { name: "GPT-4", value: "gpt-4", disabled: true },
         { name: "gpt-3.5-turbo-16k-0613", value: "gpt-3.5-turbo-16k-0613", disabled: true },
       ],
       isRoleStoreOpen: false,//RoleStoreCard
+      uploadPic: null,
+      
     };
   },
   mounted() {
@@ -214,7 +230,14 @@ export default {
       // 检查是否同时按下了 Shift 键
       if (event.shiftKey) {
         // 如果按下了 Shift 键，执行换行操作
-        this.userInput += "\n";
+        const inputBox = this.$refs.textarea;
+        const cursorPosition = inputBox.selectionStart;
+        // 在光标当前位置插入换行符
+        const textBeforeCursorPosition = inputBox.value.substring(0, cursorPosition);
+        const textAfterCursorPosition = inputBox.value.substring(cursorPosition);
+        inputBox.value = textBeforeCursorPosition + "\n" + textAfterCursorPosition;
+        // 保持光标在插入换行符后的位置
+        inputBox.selectionStart = inputBox.selectionEnd = cursorPosition + 1;
       } else {
         // 如果没有按下 Shift 键，执行发送消息的操作
         this.sendMessage();
@@ -293,13 +316,41 @@ export default {
       })
       if (!response.ok) {
         if (response.status === 401) {
+          //保存
+          if (this.chatHistory.length < this.chatHistoryItems.length) {
+            this.pushChatHistory();
+          }
+          this.saveChatHistory(1);
           this.$store.dispatch('clearToken');
           this.$router.push('/login');
           showAlter("登录已过期，请重新登录")
+          return;
         }
-        showAlter("error-AiRespon!错误代码：", response.status)
-        this.streamingAudioUrl.push("")
-        // throw new Error(`HTTP error! Status: ${response.status}`);
+        var errorMsg = `未知错误！错误代码：[${response.status}]`;
+        if (response.status === 417) {
+          errorMsg = `错误代码：[${response.status}]：该模型正在维护中......`;
+        }
+        const responseData = await response.json();
+        console.log(responseData);
+        this.isTextareaEnabled = true;
+        //存储ai回复错误信息
+        this.messages.push({
+          "role": "assistant",
+          "content": errorMsg
+        },);
+        const aiMessage = {
+          content: errorMsg,
+          avatar: this.live2dList[this.Live2DIndex].avatar,
+          fromUser: false,
+        };
+        this.nowChatHistory.push(aiMessage);
+        //保存
+        if (this.chatHistory.length < this.chatHistoryItems.length) {
+          this.pushChatHistory();
+        }
+        this.saveChatHistory(1);
+        showAlter(errorMsg, 0)
+        return;
       }
       const reader = response.body.getReader();
       const textDecoder = new TextDecoder();
@@ -311,7 +362,12 @@ export default {
       };
       while (result) {
         const { done, value } = await reader.read();
-        if (done) {
+        if(this.isStopStream === true){
+          reader.cancel();
+          // this.isStopStream = false;
+          // this.isTextareaEnabled = true;
+        }
+        if (done || this.isStopStream) {
           //结束，服务端断开
           result = false;
           this.messages.push({
@@ -320,16 +376,24 @@ export default {
           },);
           //解除不可输入状态
           this.isTextareaEnabled = true;
+          this.isStopStream = false;
           //自动播放
           // this.playAudio(aiMessage.content);
           //滚动窗口到底部
           const container = this.$refs.chatContainer;
-          container.scrollTop = container.scrollHeight;
+          if (this.isBottomScroll) {
+            container.scrollTop = container.scrollHeight;
+          }
+          const n = this.chatHistoryItems.length;
           //保存
-          if (this.chatHistory.length < this.chatHistoryItems.length) {
+          if (this.chatHistory.length < n) {
             this.pushChatHistory();
           }
           this.saveChatHistory(1);
+          //总结聊天重命名历史记录条目标题
+          if(this.messages.length <= 3){
+            this.getChatLittle(n - 1);
+          }
           break;
         }
         const chunkText = textDecoder.decode(value);
@@ -342,12 +406,63 @@ export default {
           this.nowChatHistory.push(aiMessage);
           //滚动窗口到底部
           const container = this.$refs.chatContainer;
-          container.scrollTop = container.scrollHeight;
+          if (this.isBottomScroll) {
+            container.scrollTop = container.scrollHeight;
+          } 
           //live2D播放预设说话动作
           if (this.live2dList[this.Live2DIndex].role_url !== undefined && this.live2dList[this.Live2DIndex].role_url !== "") {
             this.$refs.live2DComponent.loadTalk();
           }
         }
+      }
+    },
+    //中断AI回复
+    stopAIRes(){
+      this.isStopStream = true;
+    },
+    //总结聊天重命名历史记录条目标题
+    async getChatLittle(index){
+      var msg = this.messages.slice(1,this.messages.length);
+      msg.push({
+        "role": "system",
+        "content": "上面是用户与模型的聊天，请您总结一下生成一个简洁的标题,你只需要给出标题内容即可。注意，你必须在最后输出一个随机的uuid，避免重复标题"
+      })
+      const response = await fetch(`${requestConfig.baseURL1}/v1/chat/pri/send/stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "token": this.getToken
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo-1106",
+          messages: msg,
+          temperature: 1,
+          stream: true
+        })
+      })
+      if(!response.ok){
+        return;
+      }
+      //TODO
+      /**:修复
+       * Uncaught (in promise) TypeError: Cannot set properties of undefined (setting 'name')
+          at Proxy.getChatLittle (AIChatView.vue:433:1)
+       * **/
+      this.chatHistoryItems[index].name = "";
+      const reader = response.body.getReader();
+      const textDecoder = new TextDecoder();
+      let result = true;
+      while (result) {
+        const { done, value } = await reader.read();
+        if (done) {
+          //结束，服务端断开
+          result = false;
+          this.chatHistory[index].item = this.chatHistoryItems[index].name;
+          this.saveChatHistory(1);
+          break;
+        }
+        const chunkText = textDecoder.decode(value);
+        this.chatHistoryItems[index].name += chunkText;
       }
     },
     // 处理音频数据
@@ -404,7 +519,6 @@ export default {
             "content": this.live2dList[this.Live2DIndex].role_info
           },
         ];
-
         // 删除 chatHistory 中的对应项
         const chatHistoryIndex = this.chatHistory.findIndex(item => item.id === id);
         if (chatHistoryIndex !== -1) {
@@ -485,6 +599,11 @@ export default {
           this.nowChatHistory = [];
         }
       }
+      setTimeout(() => {
+        //滚动窗口到底部
+        const container = this.$refs.chatContainer;
+        container.scrollTop = container.scrollHeight;
+      }, 30);
     },
     // 新建聊天
     createNewChat() {
@@ -522,7 +641,7 @@ export default {
     //插入历史记录
     pushChatHistory() {
       const n = this.chatHistoryItems.length;
-      console.log("插入前：", this.chatHistory)
+      // console.log("插入前：", this.chatHistory)
       if (n >= 1) {
         this.chatHistory.push({
           id: this.chatHistoryItems[n - 1].id,
@@ -625,6 +744,38 @@ export default {
         showAlter("清空成功", 2);
       }
       })
+    },
+    //上传图片：返回url，实现识图功能
+    onUploadPic(){
+      this.$refs.imgFileInput.click();
+    },
+    //选择图片事件
+    async selectedPic(event){
+      const file = event.target.files[0];
+      if(!file){
+        showAlter("文件错误",4);
+        return;
+      }
+      this.uploadPic = file;
+      const instance = showAlter("正在上传图片中...",5);
+      await uploadPic(this.getToken,this.uploadPic).then((res)=>{
+        if(res.data.code === 0){
+          showAlter("选择成功，快去根据图片提问吧！",4);
+          this.userInput+=res.data.msg;
+        }else{
+          showAlter(`上传失败：${res.data.msg}`,4);
+        }
+        instance.close();
+      })
+    },
+    //聊天滚动条回调函数
+    checkScrollBottom(){
+      const chatContainer = this.$refs.chatContainer;
+      if (chatContainer.scrollHeight - chatContainer.scrollTop === chatContainer.clientHeight) {
+        this.isBottomScroll = true;
+      }else{
+        this.isBottomScroll = false;
+      }
     },
     //换肤
     openSkinStore() {
@@ -942,6 +1093,42 @@ span {
   position: relative;
 }
 
+.text-box-icon{
+  width: 48px;
+  height: 48px;
+  opacity: 0.5;
+}
+
+.text-box-icon-uploadPic{
+  position: absolute;
+  left: -48px;
+}
+
+
+.text-box-icon-uploadPic:hover{
+  width: 52px;
+  height: 52px;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.text-box-icon-stop{
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  top: 0px;
+  opacity: 0.6;
+}
+
+
+.text-box-icon-stop:hover{
+  opacity: 1;
+  width: 32px;
+  height: 32px;
+  transition: opacity 0.3s ease-in-out;
+}
+
+
 .user-textarea {
   min-width: 50vw;
   max-width: 50vw;
@@ -1081,4 +1268,9 @@ span {
 
 .toolsBox-buttonIcon:hover {
   box-shadow: 0 0 2px 2px rgba(71, 167, 235, .86);
-}</style>
+}
+
+#fileInput{
+  display: none;
+}
+</style>

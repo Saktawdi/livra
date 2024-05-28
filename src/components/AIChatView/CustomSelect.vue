@@ -121,7 +121,7 @@ export default {
 
 .custom-options {
   position: absolute;
-  max-height: 156px;
+  max-height: calc(25vh);
   overflow: hidden;
   overflow-y: auto;
   bottom: 100%;

@@ -3,7 +3,7 @@ import { showAlter } from "./showAlter";
 import router from '@/router'
 import store from "@/store";
 //https://api.sakta.top
-
+//localhost:7868
 export const requestConfig = {
     baseURL1: "https://api.sakta.top",
     baseURL2: "",
@@ -43,8 +43,8 @@ service.interceptors.response.use(
         if (error.response.data.msg === 'token已过期') {
             store.dispatch('clearToken');
             store.dispatch('clearUserInfo');
-            router.push('/login');
-            showAlter("登录已过期，请重新登录")
+            router.push('/login').then(() => location.reload());
+            showAlter("登录已过期，请重新登录");
         }
         return Promise.reject(error);
     }
