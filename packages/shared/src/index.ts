@@ -1,3 +1,6 @@
+import { appearanceSchema } from './skins.ts';
+export * from './skins.ts';
+export * from './conversation-organization.ts';
 import { z } from 'zod';
 export { applyMarpTheme, marpThemeName } from './marp';
 
@@ -76,6 +79,7 @@ export const personaSchema = z.object({
   greeting: z.string().max(1000),
   tools: z.array(z.string().max(64)).max(50),
   voice: z.string().max(200).default(''),
+  vitsVoice: z.string().max(200).default(''),
   voiceLanguage: speechLanguageSchema,
   live: liveSchema,
 });
@@ -281,6 +285,7 @@ export const settingsSchema = z.object({
     .default([]),
   personas: z.array(personaSchema).min(1).max(100),
   customTools: z.array(toolSchema).max(40).default([]),
+  skinToolsVersion: z.literal(1).default(1),
   defaultProvider: z.string().default(''),
   defaultModel: z.string().max(200).default(''),
   imageProvider: z.string().default(''),
@@ -288,6 +293,14 @@ export const settingsSchema = z.object({
   musicProvider: z.string().default(''),
   musicModel: z.string().max(200).default(''),
   speechProvider: z.string().default(''),
+  speechMode: z.enum(['summary', 'direct']).default('summary'),
+  speechSummaryProvider: z.string().default(''),
+  speechSummaryModel: z.string().max(200).default(''),
+  speechSummaryLength: z.number().int().min(60).max(240).default(120),
+  speechSummaryStyle: z.string().max(1000).default(''),
+  speechEngine: z.enum(['vits', 'browser', 'custom']).optional(),
+  speechVitsModel: z.enum(['trilingual', 'japanese']).default('trilingual'),
+  speechVitsVoice: z.string().max(200).default(''),
   speechModel: z.string().max(200).default('tts-1'),
   speechVoice: z.string().max(200).default(''),
   speechLanguage: speechLanguageSchema,
@@ -297,29 +310,8 @@ export const settingsSchema = z.object({
   searchKey: z.string().max(8000).optional(),
   hasSearchKey: z.boolean().optional(),
   searchEngine: z.enum(['searxng', 'tavily', 'anysearch']).default('anysearch'),
-  appearance: z
-    .object({
-      skin: z.enum(['orbit', 'paper', 'veil']).default('orbit'),
-      backgroundImage: z
-        .string()
-        .max(4_000_000)
-        .refine(
-          (v) =>
-            !v ||
-            /^https:\/\//.test(v) ||
-            /^data:image\/(png|jpeg|webp|avif);base64,[a-zA-Z0-9+/=]+$/.test(v),
-          '请选择图片或填写 HTTPS 图片地址',
-        )
-        .default(''),
-      backgroundOpacity: z.number().min(0).max(1).default(0.25),
-      backgroundBlur: z.number().min(0).max(30).default(0),
-      backgroundPosition: z.enum(['center', 'top', 'bottom']).default('center'),
-      animation: z.boolean().default(true),
-      density: z.enum(['comfortable', 'compact']).default('comfortable'),
-      bubble: z.enum(['soft', 'line', 'plain']).default('soft'),
-      radius: z.number().min(0).max(28).default(16),
-    })
-    .prefault({}),
+  appearance: appearanceSchema.prefault({}),
+  activeSkinName: z.string().max(80).default(''),
   theme: z.enum(['light', 'dark', 'system']).default('dark'),
   accent: z.enum(['sage', 'iris', 'ocean', 'rose']).default('sage'),
   locale: z.enum(['zh-CN', 'en', 'ja']).default('zh-CN'),
@@ -336,6 +328,26 @@ export const settingsSchema = z.object({
     .optional(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
+export function speechEngine(settings: Pick<Settings, 'speechEngine' | 'speechProvider'>) {
+  return settings.speechEngine || (settings.speechProvider ? 'custom' : 'vits');
+}
+export type SpeechScript = {
+  text: string;
+  source: 'model' | 'extract' | 'direct';
+  warning?: string;
+};
+export type VitsCatalog = {
+  models: {
+    id: Settings['speechVitsModel'];
+    name: string;
+    voices: string[];
+    defaultVoice: string;
+    languages: string[];
+  }[];
+  status: 'ready' | 'stale';
+  updatedAt: number;
+  error?: string;
+};
 export type Attachment = { name: string; type: 'image' | 'text'; data: string };
 export type ToolCall = {
   id: string;
@@ -367,6 +379,10 @@ export type Conversation = {
   messages: Message[];
   updated: number;
   pinned?: boolean;
+  groupId?: string | null;
+  color?: string;
+  archived?: boolean;
+  unread?: boolean;
   protocolMessages?: WireMessage[];
 };
 export type WireMessage = {
@@ -379,7 +395,7 @@ export type WireMessage = {
 export type Usage = { input: number; output: number; total: number };
 export type Artifact = {
   id: string;
-  kind: 'image' | 'music' | 'slides' | 'theme' | 'persona' | 'text';
+  kind: 'image' | 'music' | 'slides' | 'theme' | 'skin' | 'persona' | 'text';
   title: string;
   created: number;
   data: Record<string, any>;
@@ -451,6 +467,7 @@ export const defaultPersonas: Persona[] = [
       'web_search',
       'create_slides',
       'create_marp_theme',
+      'create_skin',
       'generate_image',
       'generate_music',
       'create_persona',
@@ -479,6 +496,7 @@ export const defaultPersonas: Persona[] = [
       'generate_music',
       'create_slides',
       'create_marp_theme',
+      'create_skin',
       'create_persona',
       'list_live2d_models',
       'set_emotion',

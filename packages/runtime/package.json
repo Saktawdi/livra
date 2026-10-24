@@ -1,0 +1,17 @@
+{
+  "name": "@livra/runtime",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@livra/shared": "*",
+    "@marp-team/marp-core": "^5.0.2",
+    "@noble/hashes": "^2.0.1",
+    "ajv": "^8.20.0",
+    "buffer": "^6.0.3",
+    "zod": "^4.6.7"
+  }
+}

@@ -91,4 +91,4 @@
 
 新增回归测试位于 `tests/live-models.test.ts`，涵盖目录解析、路径编码、动作组、缓存回退、来源变更、停用、工作区隔离、不兼容文件，以及 UI/Agent 目录一致性与作品来源保留。
 
-验收记录：[检查结果](verification/remote-live2d.json)、[Mao](images/remote-model-mao.png)、[Pio](images/remote-model-pio.png)、[Senko](images/remote-model-senko.png)、[手机预览](images/remote-model-mobile.png)。
+预览：[Mao](images/remote-model-mao.png)、[Pio](images/remote-model-pio.png)、[Senko](images/remote-model-senko.png)、[手机预览](images/remote-model-mobile.png)。

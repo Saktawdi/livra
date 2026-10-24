@@ -27,4 +27,4 @@ Livra 是一个有角色在场的个人 Agent 工作台。陪伴产生交流，�
 - Agent 具备多轮工具循环、审批、取消、记忆和作品。当前是个人任务工作台，不包含任意代码执行沙箱与多人协作。
 - 部分设置和编辑页尚未完成全部语言翻译；语言偏好和人偶回复语言可配置。
 
-工程结构、部署和验证方法见 [ARCHITECTURE.md](ARCHITECTURE.md)、[DEPLOYMENT.md](DEPLOYMENT.md) 与 [RSI.md](RSI.md)。
+工程结构与部署方式见 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [DEPLOYMENT.md](DEPLOYMENT.md)。

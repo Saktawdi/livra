@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import {
   personaSchema,
+  speechEngine,
   defaultPersonas,
   type Persona,
   type Settings,
@@ -23,6 +24,7 @@ import { api, download, post } from './api';
 import { PageIntro, Button, IconButton, Modal, Field, Badge, Toggle, Empty, Select } from './ui';
 import { LiveAvatar } from './LiveAvatar';
 import { LiveModelLibrary } from './LiveModelLibrary';
+import { VitsVoices } from './VitsVoices';
 import type { Notify } from './App';
 
 export function PersonaLibrary({
@@ -433,16 +435,24 @@ function PersonaEditor({
                 <Field label="回复语言" hint="auto 使用全局语言偏好。">
                   <input value={p.language} onChange={(e) => patch({ language: e.target.value })} />
                 </Field>
-                <Field
-                  label="人偶音色 ID"
-                  hint="Fish 填 reference_id；其他服务填 voice ID，或浏览器声音名称。"
-                >
-                  <input
-                    value={p.voice}
-                    onChange={(e) => patch({ voice: e.target.value })}
-                    placeholder="留空使用默认声音"
+                {speechEngine(settings) === 'vits' ? (
+                  <VitsVoices
+                    model={settings.speechVitsModel}
+                    value={p.vitsVoice}
+                    onChange={(value) => patch({ vitsVoice: value })}
                   />
-                </Field>
+                ) : (
+                  <Field
+                    label="人偶音色 ID"
+                    hint="Fish 填 reference_id；其他服务填 voice ID，或浏览器声音名称。"
+                  >
+                    <input
+                      value={p.voice}
+                      onChange={(e) => patch({ voice: e.target.value })}
+                      placeholder="留空使用默认声音"
+                    />
+                  </Field>
+                )}
                 <Field label="朗读语言" hint="auto 使用全局声音设置。Fish 用于数字与日期的读法。">
                   <input
                     value={p.voiceLanguage}

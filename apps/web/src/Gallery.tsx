@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { Artifact, Settings } from '@livra/shared';
 import { PersonaArtifact } from './PersonaArtifact';
+import { SkinArtifact, SkinPreview, type AppearancePreview } from './SkinArtifact';
 import { api, API, download } from './api';
 import { PageIntro, Empty, Badge, IconButton, Button, Modal } from './ui';
 import type { Notify } from './App';
@@ -22,6 +23,7 @@ const labels: Record<string, string> = {
   music: '音乐',
   slides: '演示文稿',
   theme: '主题',
+  skin: '皮肤',
   persona: '人偶卡',
   text: '文本',
 };
@@ -30,6 +32,7 @@ const icons: Record<string, any> = {
   music: Music2,
   slides: Presentation,
   theme: Palette,
+  skin: Palette,
   persona: UserRound,
   text: FileText,
 };
@@ -39,12 +42,14 @@ export function Gallery({
   epoch,
   notify,
   onUseTheme,
+  onAppearancePreview,
 }: {
   settings: Settings;
   saveSettings: (s: Settings) => Promise<Settings>;
   epoch: number;
   notify: Notify;
   onUseTheme: (id: string) => void;
+  onAppearancePreview: AppearancePreview;
 }) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]),
     [loading, setLoading] = useState(true),
@@ -112,7 +117,7 @@ export function Gallery({
       />
       <div className="page-filter">
         <div className="filter-tabs">
-          {['all', 'image', 'music', 'slides', 'theme', 'persona'].map((k) => (
+          {['all', 'image', 'music', 'slides', 'theme', 'skin', 'persona'].map((k) => (
             <button className={filter === k ? 'active' : ''} key={k} onClick={() => setFilter(k)}>
               {k === 'all' ? '全部作品' : labels[k]}
             </button>
@@ -151,7 +156,9 @@ export function Gallery({
                   aria-label={'查看 ' + a.title}
                   onClick={() => open(a)}
                 >
-                  {a.kind === 'image' && a.data.images?.[0] ? (
+                  {a.kind === 'skin' ? (
+                    <SkinPreview skin={a.data.skin} compact />
+                  ) : a.kind === 'image' && a.data.images?.[0] ? (
                     <img loading="lazy" src={API + a.data.images[0]} alt={a.title} />
                   ) : (
                     <div>
@@ -237,6 +244,15 @@ export function Gallery({
               />
             )}
             {detail.kind === 'theme' && <pre className="artifact-code">{detail.data.css}</pre>}
+            {detail.kind === 'skin' && (
+              <SkinArtifact
+                value={detail.data.skin}
+                settings={settings}
+                saveSettings={saveSettings}
+                onPreview={onAppearancePreview}
+                notify={notify}
+              />
+            )}
             {detail.kind === 'persona' && (
               <PersonaArtifact
                 persona={detail.data.persona}

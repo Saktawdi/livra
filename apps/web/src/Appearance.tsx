@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
-import type { Settings } from '@livra/shared';
-import { settingsSchema } from '@livra/shared';
+import { useEffect, useRef, useState } from 'react';
+import type { Settings, Artifact } from '@livra/shared';
+import { skinPackageSchema, skinSettings } from '@livra/shared';
 import { Button, Field, Section, Select, Toggle } from './ui';
-import { download } from './api';
+import { api, download } from './api';
+import { SkinPreview } from './SkinArtifact';
 import type { Notify } from './App';
 
 export const skins = [
@@ -48,56 +49,107 @@ export function Appearance({
   settings,
   patch,
   notify,
+  onDesign,
 }: {
   settings: Settings;
   patch: (p: Partial<Settings>) => void;
   notify: Notify;
+  onDesign: (prompt: string) => void;
 }) {
   const a = settings.appearance;
   const update = (p: Partial<typeof a>) => patch({ appearance: { ...a, ...p } });
   const file = useRef<HTMLInputElement>(null),
     imported = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [savedSkins, setSavedSkins] = useState<Artifact[]>([]),
+    [loadingSkins, setLoadingSkins] = useState(true),
+    [skinError, setSkinError] = useState('');
+  const [skinRequest, setSkinRequest] = useState(
+    '深空、科幻而简洁，轻薄的悬浮导航，玻璃输入区，缓慢流动的星光。',
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    api<Artifact[]>('/artifacts', { signal: controller.signal })
+      .then((items) => {
+        if (!controller.signal.aborted) setSavedSkins(items.filter((a) => a.kind === 'skin'));
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setSkinError(e.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingSkins(false);
+      });
+    return () => controller.abort();
+  }, []);
   return (
     <div className="appearance-editor">
-      <div className={'appearance-live-preview preview-' + a.skin} aria-label="实时聊天外观预览">
-        <div
-          className="appearance-preview-image"
-          style={{
-            backgroundImage: a.backgroundImage
-              ? `url(${JSON.stringify(a.backgroundImage)})`
-              : undefined,
-            opacity: a.backgroundOpacity,
-            filter: `blur(${a.backgroundBlur}px)`,
-            backgroundPosition: a.backgroundPosition,
+      {a.design ? (
+        <SkinPreview
+          skin={{
+            version: 2,
+            name: settings.activeSkinName || '自定义空间',
+            description: '',
+            appearance: a,
+            theme: settings.theme,
+            accent: settings.accent,
           }}
         />
-        <div className="preview-navigation">
-          <span>livra</span>
-          <i />
-          <i />
-          <i />
+      ) : (
+        <div className={'appearance-live-preview preview-' + a.skin} aria-label="实时聊天外观预览">
+          <div
+            className="appearance-preview-image"
+            style={{
+              backgroundImage: a.backgroundImage
+                ? `url(${JSON.stringify(a.backgroundImage)})`
+                : undefined,
+              opacity: a.backgroundOpacity,
+              filter: `blur(${a.backgroundBlur}px)`,
+              backgroundPosition: a.backgroundPosition,
+            }}
+          />
+          <div className="preview-navigation">
+            <span>livra</span>
+            <i />
+            <i />
+            <i />
+          </div>
+          <div className="preview-conversation">
+            <small>即时预览</small>
+            <h4>
+              {a.skin === 'orbit'
+                ? '给灵感，一片宇宙。'
+                : a.skin === 'paper'
+                  ? '把思绪，写成新的一页。'
+                  : '让每一天，轻一点。'}
+            </h4>
+            <div className="message user">
+              <div className="message-body">一起探索新的想法吧。</div>
+            </div>
+            <div className="message assistant">
+              <div className="message-body">我在这里，随时出发。</div>
+            </div>
+            <div className="preview-composer">
+              写下此刻的想法…<span>↑</span>
+            </div>
+          </div>
         </div>
-        <div className="preview-conversation">
-          <small>即时预览</small>
-          <h4>
-            {a.skin === 'orbit'
-              ? '给灵感，一片宇宙。'
-              : a.skin === 'paper'
-                ? '把思绪，写成新的一页。'
-                : '让每一天，轻一点。'}
-          </h4>
-          <div className="message user">
-            <div className="message-body">一起探索新的想法吧。</div>
-          </div>
-          <div className="message assistant">
-            <div className="message-body">我在这里，随时出发。</div>
-          </div>
-          <div className="preview-composer">
-            写下此刻的想法…<span>↑</span>
-          </div>
-        </div>
-      </div>
+      )}
+      <Section
+        title="让 Agent 设计皮肤"
+        description="描述想要的空间，伙伴会生成可预览、复用的皮肤作品。"
+      >
+        <Field label="你想要怎样的空间？">
+          <textarea
+            rows={3}
+            maxLength={4000}
+            value={skinRequest}
+            onChange={(e) => setSkinRequest(e.target.value)}
+          />
+        </Field>
+        <Button disabled={!skinRequest.trim()} onClick={() => onDesign(skinRequest)}>
+          带到对话中设计
+        </Button>
+      </Section>
       <Section
         title="皮肤 · 不同的空间"
         description="所有调整即时预览，保存后保留；取消会恢复之前的外观。"
@@ -107,8 +159,14 @@ export function Appearance({
             <button
               key={s.id}
               className={'skin-choice ' + s.id}
-              aria-pressed={a.skin === s.id}
-              onClick={() => patch({ appearance: { ...a, skin: s.id }, theme: s.theme })}
+              aria-pressed={!a.design && a.skin === s.id}
+              onClick={() =>
+                patch({
+                  appearance: { ...a, skin: s.id, design: undefined },
+                  theme: s.theme,
+                  activeSkinName: '',
+                })
+              }
             >
               <div className="skin-mini">
                 <i />
@@ -124,13 +182,49 @@ export function Appearance({
             </button>
           ))}
         </div>
+        {a.design && (
+          <div className="saved-skin-summary">
+            <strong>{settings.activeSkinName || '自定义空间'}</strong>
+            <span className="muted">正在使用生成的设计</span>
+          </div>
+        )}
+        <Field label="作品中的皮肤">
+          <Select
+            value=""
+            loading={loadingSkins}
+            error={skinError}
+            placeholder={savedSkins.length ? '选择已生成的皮肤…' : '生成的皮肤会保存在这里'}
+            searchable
+            options={savedSkins.map((item) => ({
+              value: item.id,
+              label: item.title,
+              description: item.data.skin?.description,
+            }))}
+            onChange={(id) => {
+              const item = savedSkins.find((s) => s.id === id);
+              const parsed = skinPackageSchema.safeParse(item?.data.skin);
+              if (parsed.success) patch(skinSettings(parsed.data));
+              else notify('皮肤格式无效', 'error');
+            }}
+          />
+        </Field>
         <div className="row gap skin-file-actions">
           <Button
             onClick={() =>
               download(
                 'livra-skin.json',
                 JSON.stringify(
-                  { version: 1, appearance: a, theme: settings.theme, accent: settings.accent },
+                  {
+                    version: 2,
+                    name:
+                      settings.activeSkinName ||
+                      skins.find((s) => s.id === a.skin)?.name ||
+                      '我的皮肤',
+                    description: '',
+                    appearance: a,
+                    theme: settings.theme,
+                    accent: settings.accent,
+                  },
                   null,
                   2,
                 ),
@@ -154,11 +248,8 @@ export function Appearance({
             try {
               if (f.size > 4_100_000) throw Error('皮肤文件过大');
               const raw = JSON.parse(await f.text());
-              if (raw.version !== 1 || !raw.appearance?.skin) throw Error('皮肤格式无效');
-              const parsed = settingsSchema
-                .pick({ appearance: true, theme: true, accent: true })
-                .parse(raw);
-              patch(parsed);
+              const parsed = skinPackageSchema.parse(raw);
+              patch(skinSettings(parsed));
             } catch {
               notify('皮肤文件格式无效', 'error');
             }

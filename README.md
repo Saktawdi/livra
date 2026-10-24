@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="docs/images/readme-banner.png" alt="Livra AI Agent Workspace：与智能体协作，让想法自由生长" width="100%">
+</p>
+
+> **项目时间线：** 原项目 `ai_tools_vue` 创建于 2023-08-04，停更于 2024-05-28；现在：基于旧版重建为 Livra，持续开发中。
+
 # Livra · 灵伴
 
 **与人偶同桌。** 一个有角色在场的个人 Agent 工作台：聊日常，也一起完成事情。开源、自部署，自由选择模型、声音和 Live2D 形象。
@@ -9,11 +15,11 @@
 ## 能做什么
 
 - **Live2D 人偶**：内置五种官方示例和 DeepSeek 大肥鱼（鲸鱼娘，CC BY-NC-SA 4.0），可同步 Live2D 官方、hacxy、fghrsh 远端形象库，支持 Cubism 2 / 3 / 4。人和 Agent 共用目录；随行伙伴可跨页面显示真实任务、跳回待确认对话，并支持拖动、收起与表情互动。详见[远端形象库](docs/REMOTE-LIVE2D.md)。
-- **多轮 Agent**：工具执行、审批、停止、部分回复保留、历史会话和用量。支持 OpenAI Chat / Responses、Anthropic Messages、Gemini 原生协议。
+- **多轮 Agent**：工具执行、审批、停止、部分回复保留、并行会话和用量。支持 OpenAI Chat / Responses、Anthropic Messages、Gemini 原生协议。
 - **自己的模型**：匿名 BYOK、本地兼容服务，或可选的 Sakta 登录使用账号可访问的免费模型。Sakta 可由部署者关闭。
-- **创作工作室**：图像与参考图、音乐、Marp 演示文稿、可复用主题；同一组能力也注册为 Agent 工具。Agent 可以生成人偶配置卡，预览后添加。
-- **声音**：Fish Audio 原生 TTS、OpenAI 兼容 TTS、浏览器朗读；人偶可覆盖全局音色与朗读语言。
-- **日常操作**：明暗主题、键盘快速访问、斜杠工具、附件、草稿保留、专注计时、移动端布局和数据导入导出。
+- **创作工作室**：图像与参考图、音乐、Marp 演示文稿、可复用主题；同一组能力也注册为 Agent 工具。Agent 可以生成人偶配置卡和外观皮肤，预览后应用。
+- **声音**：公共 VITS、Fish Audio 原生 TTS、OpenAI 兼容 TTS、浏览器朗读；人偶可覆盖全局音色与朗读语言。
+- **日常操作**：会话分组、排序、置顶与归档；明暗主题、键盘快速访问、斜杠工具、附件、草稿保留、专注计时、移动端布局和数据导入导出。
 
 ![共事与工具执行](docs/images/rsi2-agent-flow.png)
 
@@ -84,7 +90,7 @@ npm run build         # Web 与 API 生产构建
 node scripts/smoke.mjs http://localhost:3400
 ```
 
-Smoke 使用独立匿名空间创建并清理一份验收作品。设计定位与验收证据见 [产品理念](docs/PRODUCT.md)、[设计体系](docs/DESIGN.md)、[RSI 记录](docs/RSI.md)；工具开发见 [架构文档](docs/ARCHITECTURE.md)。
+Smoke 使用独立匿名空间创建并清理一份验收作品。设计定位与界面规则见 [产品理念](docs/PRODUCT.md) 和 [设计体系](docs/DESIGN.md)；工具开发见 [架构文档](docs/ARCHITECTURE.md)。
 
 ## 当前边界与许可
 

@@ -1,6 +1,6 @@
 {
   "name": "livra",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Live companions. Capable agents. Your own space.",
@@ -13,15 +13,17 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm run dev -w @livra/server\" \"npm run dev -w @livra/web\"",
-    "build": "npm run build -w @livra/web && npm run build -w @livra/server",
-    "start": "npm run start -w @livra/server",
+    "dev": "npm run dev -w @livra/web",
+    "build": "npm run build -w @livra/web",
+    "start": "node scripts/static-server.mjs",
     "check": "tsc --noEmit && npm test",
     "format": "prettier --write \"apps/*/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/*.mjs\"",
     "format:check": "prettier --check \"apps/*/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/*.mjs\"",
     "test": "node --import tsx --test tests/*.test.ts",
     "setup:live2d": "node scripts/setup-live2d.mjs",
-    "setup:whale": "node scripts/setup-whale.mjs"
+    "setup:whale": "node scripts/setup-whale.mjs",
+    "legacy:server": "npm run dev -w @livra/server",
+    "build:legacy": "npm run build -w @livra/server"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
@@ -29,6 +31,7 @@
     "@types/react-dom": "^19.1.0",
     "concurrently": "^9.2.1",
     "esbuild": "^0.25.12",
+    "fake-indexeddb": "^6.2.6",
     "prettier": "3.9.10",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"

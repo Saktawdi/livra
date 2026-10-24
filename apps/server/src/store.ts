@@ -1,3 +1,4 @@
+import { RuntimeStore } from '../../../packages/runtime/src/store.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -6,15 +7,13 @@ import {
   defaultSettings,
   settingsSchema,
   type Settings,
-  type Conversation,
-  type Artifact,
-  type Memory,
 } from '@livra/shared';
 
-export class Store {
+export class Store extends RuntimeStore {
   db: DatabaseSync;
   private key: Buffer;
   constructor(public directory: string) {
+    super();
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const keyPath = join(directory, 'vault.key');
     if (!existsSync(keyPath)) writeFileSync(keyPath, randomBytes(32), { mode: 0o600, flag: 'wx' });
@@ -61,9 +60,21 @@ export class Store {
   }
   settings(workspace: string): Settings {
     const row = this.db.prepare('SELECT value FROM settings WHERE workspace=?').get(workspace);
-    return row
-      ? settingsSchema.parse(this.unseal<Settings>(row.value as string))
-      : structuredClone(defaultSettings);
+    if (!row) return structuredClone(defaultSettings);
+    const raw = this.unseal<Settings>(row.value as string);
+    const settings = settingsSchema.parse(raw);
+    if (!raw.skinToolsVersion) {
+      for (const persona of settings.personas)
+        if (
+          persona.mode === 'work' &&
+          persona.tools.length < 50 &&
+          persona.tools.includes('create_marp_theme') &&
+          !persona.tools.includes('create_skin')
+        )
+          persona.tools.push('create_skin');
+      this.saveSettings(workspace, settings);
+    }
+    return settings;
   }
   saveSettings(workspace: string, settings: Settings) {
     this.db
@@ -94,17 +105,6 @@ export class Store {
     this.db
       .prepare('DELETE FROM records WHERE workspace=? AND kind=? AND id=?')
       .run(workspace, kind, id);
-  }
-  conversations(workspace: string) {
-    return this.list<Conversation>(workspace, 'conversation');
-  }
-  artifacts(workspace: string) {
-    return this.list<Artifact>(workspace, 'artifact');
-  }
-  memories(workspace: string, personaId?: string) {
-    return this.list<Memory>(workspace, 'memory').filter(
-      (m) => !personaId || m.personaId === personaId,
-    );
   }
   close() {
     this.db.close();

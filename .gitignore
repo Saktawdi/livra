@@ -2,6 +2,7 @@ node_modules/
 dist/
 .data/
 .local/
+docs/local/
 .env
 .env.*
 !.env.example

@@ -16,12 +16,21 @@ import {
   ChevronRight,
   CircleHelp,
 } from 'lucide-react';
-import type { Settings, Conversation, Persona, Attachment } from '@livra/shared';
+import type {
+  Settings,
+  Conversation,
+  Persona,
+  Attachment,
+  ConversationOrganization,
+  OrganizationAction,
+} from '@livra/shared';
+import { skinVariables, conversationOrganizationSchema } from '@livra/shared';
 import { api, post, put, ApiError } from './api';
 import { CommandMenu, type Command } from './CommandMenu';
-import { MoreHorizontal, Pin, Trash2, Settings2 } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import { dictionaries } from './i18n';
-import { Button, IconButton, Field, Modal } from './ui';
+import { Button, IconButton } from './ui';
+import { ConversationList } from './ConversationList';
 import { Chat } from './Chat';
 import { useSaktaModels } from './useSaktaModels';
 import { useConversationRuns } from './useConversationRuns';
@@ -45,17 +54,20 @@ export function App() {
     [locked, setLocked] = useState(false),
     [access, setAccess] = useState('');
   const [appearancePreview, setAppearancePreview] = useState<Settings | null>(null);
+  const skinProperties = useRef<string[]>([]);
   const appearanceSettings = appearancePreview || settings;
   const [conversations, setConversations] = useState<Conversation[]>([]),
     [conversation, setConversation] = useState<Conversation | null>(null),
     [personaId, setPersonaId] = useState('lumi');
+  const [organization, setOrganization] = useState<ConversationOrganization>(() =>
+    conversationOrganizationSchema.parse({}),
+  );
+  const [draftGroupId, setDraftGroupId] = useState<string | null>(null);
   const remoteModels = useSaktaModels(settings?.sakta);
   const [view, setView] = useState<View>('chat'),
     [settingsTab, setSettingsTab] = useState<string | null>(null),
     [sidebar, setSidebar] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false),
-    [editingHistory, setEditingHistory] = useState<Conversation | null>(null),
-    [historyTitle, setHistoryTitle] = useState(''),
     [personaToEdit, setPersonaToEdit] = useState(''),
     [pendingPrompt, setPendingPrompt] = useState('');
   const [studioTheme, setStudioTheme] = useState('');
@@ -100,6 +112,7 @@ export function App() {
       const data = await api('/bootstrap');
       setSettings(data.settings);
       setConversations(data.conversations);
+      setOrganization(conversationOrganizationSchema.parse(data.conversationOrganization || {}));
       setSaktaEnabled(data.saktaEnabled);
       setLocked(false);
       let savedId = '',
@@ -194,6 +207,15 @@ export function App() {
     document.documentElement.dataset.skin = settings.appearance.skin;
     document.documentElement.dataset.density = settings.appearance.density;
     document.documentElement.dataset.bubble = settings.appearance.bubble;
+    const root = document.documentElement,
+      design = settings.appearance.design;
+    for (const key of skinProperties.current) root.style.removeProperty(key);
+    const variables = skinVariables(design);
+    for (const [key, value] of Object.entries(variables)) root.style.setProperty(key, value);
+    skinProperties.current = Object.keys(variables);
+    root.dataset.design = design ? 'custom' : '';
+    root.dataset.navigation = design?.navigation || '';
+    root.dataset.composer = design?.composer || '';
     document.documentElement.style.setProperty(
       '--bubble-radius',
       settings.appearance.radius + 'px',
@@ -223,11 +245,13 @@ export function App() {
   async function refreshHistory() {
     const data = await api('/bootstrap');
     setConversations(data.conversations);
+    setOrganization(conversationOrganizationSchema.parse(data.conversationOrganization || {}));
   }
-  function newChat(id?: string) {
+  function newChat(id?: string, groupId: string | null = null) {
     draftGeneration.current++;
     selected.current = null;
     setConversation(null);
+    setDraftGroupId(groupId);
     if (id) setPersonaId(id);
     setView('chat');
     setSidebar(false);
@@ -243,6 +267,18 @@ export function App() {
       if (selected.current === id) {
         setConversation(c);
         setPersonaId(c.personaId);
+        if (c.unread) {
+          const read = await api<Conversation>('/conversations/' + id, {
+            method: 'PATCH',
+            body: JSON.stringify({ unread: false }),
+          });
+          setConversations((list) => list.map((x) => (x.id === id ? { ...x, unread: false } : x)));
+          setOrganization((old) => ({
+            ...old,
+            entries: { ...old.entries, [id]: { ...old.entries[id], unread: false } },
+          }));
+          if (selected.current === id) setConversation(read);
+        }
       }
     } catch (e) {
       notify((e as Error).message, 'error');
@@ -285,7 +321,7 @@ export function App() {
     try {
       if (!c) {
         creating.current = true;
-        c = await post<Conversation>('/conversations', { personaId });
+        c = await post<Conversation>('/conversations', { personaId, groupId: draftGroupId });
         if (generation === draftGeneration.current && selected.current === null) {
           selected.current = c.id;
           setConversation(c);
@@ -303,28 +339,28 @@ export function App() {
   const stop = () => taskRuns.stop(selected.current);
   const approve = taskRuns.approve;
   async function removeConversation(id: string) {
-    if (!confirm('删除这段对话？此操作无法撤销。')) return;
-    try {
-      await api('/conversations/' + id, { method: 'DELETE' });
-      setConversations((items) => items.filter((x) => x.id !== id));
-      if (selected.current === id) newChat();
-    } catch (e) {
-      notify((e as Error).message, 'error');
-    }
+    await api('/conversations/' + id, { method: 'DELETE' });
+    setConversations((items) => items.filter((x) => x.id !== id));
+    if (selected.current === id) newChat();
+    await refreshHistory();
   }
 
   async function updateHistory(c: Conversation, patch: Partial<Conversation>) {
-    try {
-      const updated = await api<Conversation>('/conversations/' + c.id, {
-        method: 'PATCH',
-        body: JSON.stringify(patch),
-      });
-      setConversations((v) => v.map((x) => (x.id === c.id ? updated : x)));
-      if (conversation?.id === c.id) setConversation(updated);
-      setEditingHistory(null);
-    } catch (e) {
-      notify((e as Error).message, 'error');
-    }
+    const updated = await api<Conversation>('/conversations/' + c.id, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    setConversations((v) => v.map((x) => (x.id === c.id ? updated : x)));
+    if (selected.current === c.id) setConversation(updated);
+    await refreshHistory();
+  }
+  async function organizeHistory(action: OrganizationAction) {
+    const next = await api<ConversationOrganization>('/conversation-organization', {
+      method: 'PATCH',
+      body: JSON.stringify(action),
+    });
+    setOrganization(next);
+    if (draftGroupId && !next.groups.some((g) => g.id === draftGroupId)) setDraftGroupId(null);
   }
   if (loading)
     return (
@@ -499,49 +535,18 @@ export function App() {
             </button>
           ))}
         </nav>
-        <div className="history-heading">
-          <span>{t.recent}</span>
-          <span>{conversations.length || ''}</span>
-        </div>
-        <div className="history-list">
-          {[...conversations]
-            .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updated - a.updated)
-            .map((c) => (
-              <div
-                className={
-                  'history-row ' + (selected.current === c.id && view === 'chat' ? 'active' : '')
-                }
-                key={c.id}
-              >
-                <button className="history-title" onClick={() => openConversation(c.id)}>
-                  {taskRuns.sessions[c.id] ? (
-                    <span
-                      className="running-session-dot"
-                      aria-label={
-                        taskRuns.sessions[c.id].approvals.length ? '等待确认' : '正在运行'
-                      }
-                      data-attention={!!taskRuns.sessions[c.id].approvals.length}
-                    />
-                  ) : c.pinned ? (
-                    <Pin size={14} />
-                  ) : (
-                    <MessageCircle size={14} />
-                  )}
-                  <span>{taskRuns.sessions[c.id]?.conversation.title || c.title}</span>
-                </button>
-                <IconButton
-                  label={'管理对话 ' + c.title}
-                  onClick={() => {
-                    setEditingHistory(c);
-                    setHistoryTitle(c.title);
-                  }}
-                >
-                  <MoreHorizontal size={16} />
-                </IconButton>
-              </div>
-            ))}
-          {!conversations.length && <p className="no-history">{t.empty}</p>}
-        </div>
+        <ConversationList
+          conversations={conversations}
+          organization={organization}
+          sessions={taskRuns.sessions}
+          selectedId={view === 'chat' ? selected.current : null}
+          onOpen={openConversation}
+          onNew={(groupId) => newChat(undefined, groupId)}
+          onOrganize={organizeHistory}
+          onUpdate={updateHistory}
+          onDelete={removeConversation}
+          notify={notify}
+        />
         <div className="sidebar-bottom">
           <button className="account-button" onClick={() => setSettingsTab('accounts')}>
             <span className="account-avatar">
@@ -585,6 +590,14 @@ export function App() {
             </IconButton>
             <span className="breadcrumb">
               {nav.find((n) => n.id === view)!.label}
+              {view === 'chat' &&
+                !conversation &&
+                draftGroupId &&
+                organization.groups.some((g) => g.id === draftGroupId) && (
+                  <small className="draft-group-label">
+                    / {organization.groups.find((g) => g.id === draftGroupId)!.name} · 新对话
+                  </small>
+                )}
               {view === 'chat' && conversation && (
                 <>
                   <ChevronRight size={15} />
@@ -643,6 +656,7 @@ export function App() {
                 onPersona={changePersona}
                 onSettings={() => setSettingsTab('models')}
                 onUseTheme={useTheme}
+                onAppearancePreview={setAppearancePreview}
                 detachedPresence={detachedPresence}
                 onDetachPresence={() => setDetachedPresence(true)}
                 focusRequest={focusRequest}
@@ -693,6 +707,7 @@ export function App() {
                 saveSettings={saveSettings}
                 epoch={artifactEpoch}
                 onUseTheme={useTheme}
+                onAppearancePreview={setAppearancePreview}
                 notify={notify}
               />
             )}
@@ -720,57 +735,26 @@ export function App() {
         />
       )}
       {commandOpen && <CommandMenu commands={commands} onClose={() => setCommandOpen(false)} />}
-      {editingHistory && (
-        <Modal title="管理对话" onClose={() => setEditingHistory(null)}>
-          <div className="modal-body">
-            <Field label="对话名称">
-              <input
-                autoFocus
-                data-autofocus
-                maxLength={100}
-                value={historyTitle}
-                onChange={(e) => setHistoryTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && historyTitle.trim())
-                    void updateHistory(editingHistory, { title: historyTitle.trim() });
-                }}
-              />
-            </Field>
-            <Button
-              onClick={() => updateHistory(editingHistory, { pinned: !editingHistory.pinned })}
-            >
-              <Pin size={16} />
-              {editingHistory.pinned ? '取消固定' : '固定对话'}
-            </Button>
-          </div>
-          <div className="modal-footer">
-            <Button
-              variant="danger"
-              onClick={() => {
-                void removeConversation(editingHistory.id);
-                setEditingHistory(null);
-              }}
-            >
-              <Trash2 size={16} />
-              删除
-            </Button>
-            <div className="button-row">
-              <Button onClick={() => setEditingHistory(null)}>取消</Button>
-              <Button
-                variant="primary"
-                disabled={!historyTitle.trim()}
-                onClick={() => updateHistory(editingHistory, { title: historyTitle.trim() })}
-              >
-                保存
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
       {settingsTab && (
         <Suspense fallback={null}>
           <SettingsPanel
             settings={settings}
+            onDesignSkin={(prompt) => {
+              const designer = settings.personas.find((p) => p.tools.includes('create_skin'));
+              if (!designer) {
+                notify('请先在人偶的工具能力中启用「设计应用皮肤」', 'error');
+                return;
+              }
+              setSettingsTab(null);
+              setAppearancePreview(null);
+              setSidebar(false);
+              setView('chat');
+              if (designer && !persona.tools.includes('create_skin')) newChat(designer.id);
+              setPendingPrompt(
+                '请使用 create_skin 设计一套应用皮肤，生成可预览和复用的皮肤作品。我的需求：' +
+                  prompt,
+              );
+            }}
             onPreview={setAppearancePreview}
             initialTab={settingsTab}
             saktaEnabled={saktaEnabled}

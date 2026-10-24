@@ -1109,7 +1109,7 @@ test('Fish speech sends the model header and reference ID; OpenAI speech remains
   assert.equal(observed[1].body.reference_id, 'default-reference');
   assert.equal(observed[1].body.language, undefined);
   const bad = await play({ input: 'fail' });
-  assert.equal(bad.statusCode, 500);
+  assert.equal(bad.statusCode, 502);
   assert.ok(!bad.body.includes('fish-private-secret'));
   assert.match(bad.body, /redacted/);
   assert.equal((await play({ input: 'hello', language: 'not a language' })).statusCode, 400);
@@ -1127,6 +1127,63 @@ test('Fish speech sends the model header and reference ID; OpenAI speech remains
   assert.equal(observed.at(-1).path, '/v1/audio/speech');
   assert.equal(observed.at(-1).body.voice, 'alloy');
   assert.equal(observed.at(-1).body.model, 'tts-1');
+});
+
+test('speech permits proxy DNS only for official Fish HTTPS and reports redacted network causes', async () => {
+  const provider = {
+    id: 'fish',
+    name: 'Fish',
+    protocol: 'fish' as const,
+    kind: 'speech' as const,
+    baseUrl: 'https://api.fish.audio/v1',
+    apiKey: 'speech-secret',
+    models: [],
+  };
+  for (const [baseUrl, allowProxyDns] of [
+    ['https://api.fish.audio/v1', true],
+    ['http://api.fish.audio/v1', false],
+    ['https://api.fish.audio:444/v1', false],
+    ['https://api.fish.audio.example/v1', false],
+    ['https://custom.example/v1', false],
+  ] as const) {
+    let calls = 0;
+    const audio = await synthesize(
+      { ...provider, baseUrl },
+      defaultSettings,
+      '你好',
+      '',
+      'auto',
+      AbortSignal.timeout(5000),
+      async (url, _init, _private, proxyDns) => {
+        calls++;
+        assert.equal(url, baseUrl + '/tts');
+        assert.equal(proxyDns, allowProxyDns);
+        return new Response('ID3-audio', { headers: { 'content-type': 'audio/mpeg' } });
+      },
+    );
+    assert.equal(calls, 1);
+    assert.equal(audio.toString(), 'ID3-audio');
+  }
+  await assert.rejects(
+    synthesize(
+      provider,
+      defaultSettings,
+      '你好',
+      '',
+      'auto',
+      AbortSignal.timeout(5000),
+      async () => {
+        throw new TypeError('fetch failed', { cause: Error('目标是内网地址 speech-secret') });
+      },
+    ),
+    (error: any) => {
+      assert.equal(error.statusCode, 502);
+      assert.match(error.message, /Fish Audio合成失败.*目标是内网地址/);
+      assert.ok(!error.message.includes(provider.apiKey));
+      assert.match(error.message, /redacted/);
+      return true;
+    },
+  );
 });
 
 test('speech bounds buffered audio and aborts a pending synthesis', async (t) => {

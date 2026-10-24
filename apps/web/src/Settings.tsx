@@ -19,8 +19,9 @@ import {
 import type { Provider, Settings } from '@livra/shared';
 import { providerSchema, settingsSchema, fishModels } from '@livra/shared';
 import { api, post, download } from './api';
-import { Button, IconButton, Field, Modal, Section, Toggle, Badge, Select } from './ui';
-import { useSaktaModels } from './useSaktaModels';
+import { Button, IconButton, Field, Modal, Section, Badge, Select } from './ui';
+import { ModelDefault } from './ModelDefault';
+import { VoiceSettings } from './VoiceSettings';
 import type { Notify } from './App';
 import { ModelSkeleton } from './ModelPicker';
 import { Appearance } from './Appearance';
@@ -34,6 +35,7 @@ export function SettingsPanel({
   onPreview,
   onClose,
   notify,
+  onDesignSkin,
 }: {
   settings: Settings;
   initialTab: string;
@@ -43,6 +45,7 @@ export function SettingsPanel({
   onPreview: (s: Settings) => void;
   onClose: () => void;
   notify: Notify;
+  onDesignSkin: (prompt: string) => void;
 }) {
   const [draft, setDraft] = useState(() => settingsSchema.parse(settings)),
     [tab, setTab] = useState(initialTab),
@@ -86,6 +89,9 @@ export function SettingsPanel({
       ...(draft.imageProvider === id ? { imageProvider: '', imageModel: '' } : {}),
       ...(draft.musicProvider === id ? { musicProvider: '', musicModel: '' } : {}),
       ...(draft.speechProvider === id ? { speechProvider: '' } : {}),
+      ...(draft.speechSummaryProvider === id
+        ? { speechSummaryProvider: '', speechSummaryModel: '' }
+        : {}),
     });
   }
   function saveProvider(p: Provider) {
@@ -360,7 +366,9 @@ export function SettingsPanel({
               )}
             </Section>
           )}
-          {tab === 'appearance' && <Appearance settings={draft} patch={patch} notify={notify} />}
+          {tab === 'appearance' && (
+            <Appearance settings={draft} patch={patch} notify={notify} onDesign={onDesignSkin} />
+          )}
           {tab === 'language' && (
             <>
               <Section title="语言偏好">
@@ -391,87 +399,7 @@ export function SettingsPanel({
               </Section>
             </>
           )}
-          {tab === 'voice' && (
-            <>
-              <Section title="声音" description="支持浏览器朗读、Fish Audio 和 OpenAI 兼容服务。">
-                <Toggle
-                  label="自动朗读回复"
-                  description="伙伴回复完成后，朗读本次内容。浏览器可能需要先进行一次手动播放。"
-                  checked={draft.autoSpeak}
-                  onChange={(v) => patch({ autoSpeak: v })}
-                />
-                <ModelDefault
-                  label="语音模型"
-                  kind="speech"
-                  draft={draft}
-                  providerId={draft.speechProvider}
-                  model={draft.speechModel}
-                  onChange={(id, m) => patch({ speechProvider: id, speechModel: m })}
-                />
-                <div className="form-grid">
-                  <Field
-                    label="默认音色 ID"
-                    hint={
-                      draft.providers.find((p) => p.id === draft.speechProvider)?.protocol ===
-                      'fish'
-                        ? '填写 Fish Audio 音色的 reference_id，留空使用服务默认声音。'
-                        : '语音服务的 voice ID 或浏览器声音名称。'
-                    }
-                  >
-                    <input
-                      value={draft.speechVoice}
-                      onChange={(e) => patch({ speechVoice: e.target.value })}
-                      placeholder="留空使用默认声音"
-                    />
-                  </Field>
-                  <Field
-                    label="朗读语言"
-                    hint="auto 自动识别。可填 zh-CN、en、ja 等；混合语言推荐 auto。"
-                  >
-                    <input
-                      value={draft.speechLanguage}
-                      onChange={(e) => patch({ speechLanguage: e.target.value })}
-                      placeholder="auto"
-                    />
-                  </Field>
-                  <Field label={'语速 · ' + draft.speechSpeed.toFixed(1) + '×'}>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="2"
-                      step="0.1"
-                      value={draft.speechSpeed}
-                      onChange={(e) => patch({ speechSpeed: Number(e.target.value) })}
-                    />
-                  </Field>
-                  {draft.providers.find((p) => p.id === draft.speechProvider)?.protocol ===
-                    'fish' && (
-                    <Field label="Fish 合成偏好">
-                      <Select
-                        value={draft.speechLatency}
-                        onChange={(value) =>
-                          patch({ speechLatency: value as Settings['speechLatency'] })
-                        }
-                        options={[
-                          { value: 'balanced', label: '均衡', description: '较低延迟' },
-                          { value: 'normal', label: '音质优先' },
-                        ]}
-                      />
-                    </Field>
-                  )}
-                </div>
-                <p className="setting-note">
-                  人偶卡中的音色与朗读语言优先于这里的默认设置。Fish
-                  的语言标签用于数字、日期等文本读法，不会改变音色与口音。
-                </p>
-              </Section>
-              <Section title="语音输入">
-                <p className="muted">
-                  对话输入框的麦克风使用浏览器语音识别。可用性取决于浏览器，输入语言跟随界面语言。
-                </p>
-              </Section>
-            </>
-          )}
+          {tab === 'voice' && <VoiceSettings draft={draft} patch={patch} notify={notify} />}
           {tab === 'search' && (
             <Section title="网页搜索" description="配置服务后，在人偶卡中启用网页搜索。">
               <Field label="搜索服务">
@@ -543,7 +471,7 @@ export function SettingsPanel({
             <>
               <Section
                 title="备份与恢复"
-                description="导出包括人偶、对话、记忆和作品。密钥与登录凭据不会包含在导出文件中。"
+                description="数据和密钥保存在当前浏览器。导出包括人偶、对话、记忆和作品，不含密钥和登录凭据。"
               >
                 <div className="button-row">
                   <Button
@@ -664,50 +592,6 @@ export function SettingsPanel({
     </Modal>
   );
 }
-function ModelDefault({
-  label,
-  kind,
-  draft,
-  providerId,
-  model,
-  onChange,
-}: {
-  label: string;
-  kind: Provider['kind'];
-  draft: Settings;
-  providerId: string;
-  model: string;
-  onChange: (id: string, m: string) => void;
-}) {
-  const remote = useSaktaModels(kind === 'chat' ? draft.sakta : undefined);
-  const remoteModels = [
-    ...new Set([...(providerId === 'sakta' && model ? [model] : []), ...remote.models]),
-  ];
-  return (
-    <Field label={label}>
-      <Select
-        value={providerId + '|' + model}
-        onChange={(value) => {
-          const [id, ...m] = value.split('|');
-          onChange(id, m.join('|'));
-        }}
-        searchable
-        loading={remote.loading}
-        error={remote.error}
-        onRetry={remote.connected ? remote.refresh : undefined}
-        options={[
-          { value: '|', label: kind === 'speech' ? '使用浏览器朗读' : '暂未选择' },
-          ...remoteModels.map((m) => ({ value: 'sakta|' + m, label: m, group: 'Sakta' })),
-          ...draft.providers
-            .filter((p) => p.kind === kind)
-            .flatMap((p) =>
-              p.models.map((m) => ({ value: p.id + '|' + m, label: m, group: p.name })),
-            ),
-        ]}
-      />
-    </Field>
-  );
-}
 function ProviderEditor({
   provider,
   onChange,
@@ -814,7 +698,7 @@ function ProviderEditor({
         </Field>
         <Field
           label="服务地址 Base URL"
-          hint="包含版本路径，例如 /v1；请求将追加模型或生成功能的路径。"
+          hint="浏览器直接连接此地址，包含版本路径（如 /v1）；服务需允许当前站点跨域访问。"
         >
           <input
             type="url"
@@ -950,7 +834,13 @@ function ProviderEditor({
         {p.protocol === 'fish' && (
           <p className="info-box">
             推荐 s2.1-pro。s2.1-pro-free 可用于账号允许的测试额度。音色在「声音」或人偶卡中填写
-            reference_id；密钥仅保存在后端。
+            reference_id；密钥保存在当前浏览器，请求直接发送给 Fish。
+          </p>
+        )}
+        {p.protocol === 'fish' && /^https:\/\/api\.fish\.audio(?:\/|$)/i.test(p.baseUrl) && (
+          <p className="info-box">
+            Fish 官方地址目前不允许网页跨域调用。请使用允许跨域的 Fish 兼容地址，或在「声音」中选择
+            VITS / 浏览器朗读。
           </p>
         )}
         {p.kind === 'music' && (

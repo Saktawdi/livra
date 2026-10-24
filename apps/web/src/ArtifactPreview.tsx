@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Download, Music2, Presentation } from 'lucide-react';
 import type { Artifact, Settings } from '@livra/shared';
 import { PersonaArtifact } from './PersonaArtifact';
+import { SkinArtifact, type AppearancePreview } from './SkinArtifact';
 import { api, download } from './api';
 import { Modal, Button, Badge } from './ui';
 import type { Notify } from './App';
@@ -13,6 +14,7 @@ export function ArtifactPreview({
   saveSettings,
   notify,
   onUseTheme,
+  onAppearancePreview,
 }: {
   id: string;
   onClose: () => void;
@@ -20,6 +22,7 @@ export function ArtifactPreview({
   saveSettings: (s: Settings) => Promise<Settings>;
   notify: Notify;
   onUseTheme: (id: string) => void;
+  onAppearancePreview: AppearancePreview;
 }) {
   const [item, setItem] = useState<Artifact | null>(null),
     [error, setError] = useState('');
@@ -37,6 +40,7 @@ export function ArtifactPreview({
     music: '音乐',
     slides: '演示文稿',
     theme: 'Marp 主题',
+    skin: '皮肤',
     persona: '人偶卡',
     text: '文本',
   };
@@ -118,6 +122,15 @@ export function ArtifactPreview({
                 liveModel={item.data.liveModel}
                 settings={settings}
                 saveSettings={saveSettings}
+                notify={notify}
+              />
+            )}
+            {item.kind === 'skin' && (
+              <SkinArtifact
+                value={item.data.skin}
+                settings={settings}
+                saveSettings={saveSettings}
+                onPreview={onAppearancePreview}
                 notify={notify}
               />
             )}

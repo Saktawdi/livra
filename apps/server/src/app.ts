@@ -13,6 +13,10 @@ import {
   providerSchema,
   personaSchema,
   speechLanguageSchema,
+  speechEngine,
+  skinPackageSchema,
+  conversationOrganizationSchema,
+  conversationMetaSchema,
   liveModelCatalog,
   type Artifact,
   type Conversation,
@@ -24,6 +28,8 @@ import { listModels } from './providers.ts';
 import { toolList, executeTool, renderSlides, builtInNames, type Context } from './tools.ts';
 import { resolveProvider, runAgent, runs, type Run } from './agent.ts';
 import { synthesize } from './speech.ts';
+import { VitsService } from './vits.ts';
+import { prepareNarration } from './narration.ts';
 import { listSaktaModels, saktaRequest } from './sakta.ts';
 import { LiveModelService } from './live-models.ts';
 import type { network } from './network.ts';
@@ -39,6 +45,7 @@ export async function createApp(
     logger?: boolean;
     staticRoot?: string;
     liveModelFetch?: typeof network;
+    vitsFetch?: typeof network;
   } = {},
 ) {
   const app = Fastify({
@@ -55,6 +62,7 @@ export async function createApp(
       resolve(process.env.DATA_DIR || resolve(import.meta.dirname, '../../../.data')),
   );
   const liveModels = new LiveModelService(store, options.liveModelFetch);
+  const vits = new VitsService(options.vitsFetch);
   app.decorateRequest('workspace', '');
   await app.register(cookie);
   await app.register(rateLimit, { max: 240, timeWindow: '1 minute' });
@@ -123,6 +131,7 @@ export async function createApp(
             .slice(0, 3)
             .join('；')
         : safeError(error, secrets);
+    req.log.error({ statusCode: status, message }, 'API request failed');
     reply.code(status).send({ error: message });
   });
   const context = (
@@ -157,11 +166,12 @@ export async function createApp(
   );
   app.get('/api/bootstrap', async (req) => ({
     settings: publicSettings(store.settings(req.workspace)),
+    conversationOrganization: store.organization(req.workspace),
     conversations: store
       .conversations(req.workspace)
       .map(({ messages, protocolMessages, ...c }) => ({ ...c, messages: [] })),
     saktaEnabled: process.env.SAKTA_BASE_URL !== '',
-    version: '1.0.0',
+    version: '1.1.0',
   }));
   app.put('/api/settings', async (req) => {
     // Runs keep their own settings snapshot; preferences apply to subsequent runs.
@@ -261,16 +271,24 @@ export async function createApp(
     store.saveSettings(req.workspace, settings);
     return publicSettings(settings);
   });
+  app.get('/api/conversation-organization', async (req) => store.organization(req.workspace));
+  app.patch('/api/conversation-organization', async (req) =>
+    store.organize(req.workspace, req.body as any),
+  );
   app.get('/api/conversations/:id', async (req, reply) => {
-    const c = store.get<Conversation>(req.workspace, 'conversation', (req.params as any).id);
+    const c = store.conversation(req.workspace, (req.params as any).id);
     if (!c) return reply.code(404).send({ error: '对话不存在' });
     const { protocolMessages, ...visible } = c;
     return visible;
   });
   app.post('/api/conversations', async (req) => {
-    const { personaId } = z.object({ personaId: z.string() }).parse(req.body);
+    const { personaId, groupId } = z
+      .object({ personaId: z.string(), groupId: z.string().uuid().nullable().optional() })
+      .parse(req.body);
     if (!store.settings(req.workspace).personas.some((p) => p.id === personaId))
       throw Object.assign(Error('人偶不存在'), { statusCode: 400 });
+    if (groupId && !store.organization(req.workspace).groups.some((g) => g.id === groupId))
+      throw Object.assign(Error('分组不存在'), { statusCode: 400 });
     const conversation: Conversation = {
       id: randomUUID(),
       title: '新对话',
@@ -278,16 +296,16 @@ export async function createApp(
       messages: [],
       updated: Date.now(),
     };
-    return store.put(req.workspace, 'conversation', conversation);
+    store.put(req.workspace, 'conversation', conversation);
+    if (groupId) store.organize(req.workspace, { type: 'move', id: conversation.id, groupId });
+    return store.conversation(req.workspace, conversation.id);
   });
   app.patch('/api/conversations/:id', async (req, reply) => {
     const id = (req.params as any).id;
     const c = store.get<Conversation>(req.workspace, 'conversation', id);
     if (!c) return reply.code(404).send({ error: '对话不存在' });
-    const patch = z
-      .object({
-        title: z.string().min(1).max(100).optional(),
-        pinned: z.boolean().optional(),
+    const patch = conversationMetaSchema
+      .extend({
         personaId: z.string().optional(),
       })
       .parse(req.body);
@@ -296,9 +314,18 @@ export async function createApp(
       !store.settings(req.workspace).personas.some((p) => p.id === patch.personaId)
     )
       throw Object.assign(Error('人偶不存在'), { statusCode: 400 });
-    Object.assign(c, patch);
+    if (
+      patch.groupId &&
+      !store.organization(req.workspace).groups.some((g) => g.id === patch.groupId)
+    )
+      throw Object.assign(Error('分组不存在'), { statusCode: 400 });
+    const { personaId, ...meta } = patch;
+    if (personaId) c.personaId = personaId;
+    const organization = store.organization(req.workspace);
+    organization.entries[id] = { ...organization.entries[id], ...meta };
+    store.saveOrganization(req.workspace, organization);
     store.put(req.workspace, 'conversation', c);
-    const { protocolMessages, ...visible } = c;
+    const { protocolMessages, ...visible } = store.conversation(req.workspace, id)!;
     return visible;
   });
   app.delete('/api/conversations/:id', async (req) => {
@@ -306,6 +333,10 @@ export async function createApp(
     for (const r of runs.values())
       if (r.workspace === req.workspace && r.conversationId === id) r.controller.abort();
     store.delete(req.workspace, 'conversation', id);
+    const organization = store.organization(req.workspace);
+    delete organization.entries[id];
+    organization.order = organization.order.filter((x) => x !== id);
+    store.saveOrganization(req.workspace, organization);
     return { ok: true };
   });
   app.get('/api/tools', async (req) => toolList(context(req.workspace)));
@@ -407,6 +438,7 @@ export async function createApp(
     exportedAt: new Date().toISOString(),
     settings: publicSettings(store.settings(req.workspace)),
     conversations: store.conversations(req.workspace),
+    conversationOrganization: store.organization(req.workspace),
     artifacts: store.artifacts(req.workspace),
     memories: store.memories(req.workspace),
   }));
@@ -416,6 +448,7 @@ export async function createApp(
         version: z.literal(1),
         settings: settingsSchema,
         conversations: z.array(z.any()).max(1000),
+        conversationOrganization: conversationOrganizationSchema.optional(),
         artifacts: z.array(z.any()).max(500),
         memories: z.array(z.any()).max(1000),
       })
@@ -433,6 +466,10 @@ export async function createApp(
           title: z.string().max(100),
           personaId: z.string(),
           updated: z.number(),
+          pinned: z.boolean().optional(),
+          color: conversationMetaSchema.shape.color,
+          archived: z.boolean().optional(),
+          unread: z.boolean().optional(),
           messages: z
             .array(
               z.object({
@@ -451,7 +488,7 @@ export async function createApp(
       const a = z
         .object({
           id: z.string().uuid(),
-          kind: z.enum(['image', 'music', 'slides', 'theme', 'persona', 'text']),
+          kind: z.enum(['image', 'music', 'slides', 'theme', 'skin', 'persona', 'text']),
           title: z.string().max(120),
           created: z.number(),
           data: z.record(z.string(), z.unknown()),
@@ -495,6 +532,10 @@ export async function createApp(
         a.data = s;
       }
       if (a.kind === 'persona') a.data = { persona: personaSchema.parse(a.data.persona) };
+      if (a.kind === 'skin')
+        a.data = z
+          .object({ skin: skinPackageSchema, prompt: z.string().max(4000).optional() })
+          .parse(a.data);
       if (a.kind === 'text') a.data = z.object({ content: z.string().max(200000) }).parse(a.data);
       return a;
     });
@@ -508,11 +549,25 @@ export async function createApp(
         })
         .parse(raw),
     );
+    if (data.conversationOrganization) {
+      const ids = new Set(
+        [...store.conversations(req.workspace), ...conversations].map((c) => c.id),
+      );
+      if (
+        [
+          ...Object.keys(data.conversationOrganization.entries),
+          ...data.conversationOrganization.order,
+        ].some((id) => !ids.has(id))
+      )
+        throw Object.assign(Error('分组数据引用了不存在的对话'), { statusCode: 400 });
+    }
     store.db.exec('BEGIN');
     try {
       for (const c of conversations) store.put(req.workspace, 'conversation', c);
       for (const a of artifacts) store.put(req.workspace, 'artifact', a);
       for (const m of memories) store.put(req.workspace, 'memory', m);
+      if (data.conversationOrganization)
+        store.saveOrganization(req.workspace, data.conversationOrganization);
       store.saveSettings(req.workspace, settings);
       store.db.exec('COMMIT');
     } catch (error) {
@@ -642,29 +697,92 @@ export async function createApp(
     run.approvals.get(approval)!(allow);
     return { ok: true };
   });
-  app.post('/api/speech', async (req, reply) => {
-    const { input, voice, language } = z
+  const speechDraft = settingsSchema
+    .pick({
+      speechEngine: true,
+      speechProvider: true,
+      speechModel: true,
+      speechVoice: true,
+      speechVitsModel: true,
+      speechVitsVoice: true,
+      speechLanguage: true,
+      speechSpeed: true,
+      speechLatency: true,
+      speechMode: true,
+      speechSummaryProvider: true,
+      speechSummaryModel: true,
+      speechSummaryLength: true,
+      speechSummaryStyle: true,
+    })
+    .partial();
+  app.get('/api/speech/voices', async (req) => {
+    const { refresh } = z
+      .object({ refresh: z.enum(['true', 'false']).optional() })
+      .parse(req.query);
+    return vits.catalog(refresh === 'true');
+  });
+  app.post('/api/speech/prepare', async (req, reply) => {
+    const body = z
       .object({
-        input: z.string().min(1).max(4000),
-        voice: z.string().max(200).default(''),
-        language: speechLanguageSchema.removeDefault().optional(),
+        input: z.string().min(1).max(100_000),
+        personaId: z.string().optional(),
+        draft: speechDraft.optional(),
+        persona: personaSchema
+          .pick({ name: true, systemPrompt: true, voiceLanguage: true })
+          .optional(),
       })
       .parse(req.body);
-    const settings = store.settings(req.workspace);
+    const settings = { ...store.settings(req.workspace), ...body.draft };
+    const saved = settings.personas.find((p) => p.id === body.personaId);
+    const persona = saved && body.persona ? { ...saved, ...body.persona } : saved;
+    const controller = new AbortController();
+    reply.raw.on('close', () => {
+      if (!reply.raw.writableEnded) controller.abort();
+    });
+    return prepareNarration(settings, body.input, persona, controller.signal);
+  });
+  app.post('/api/speech', async (req, reply) => {
+    const { input, voice, language, draft } = z
+      .object({
+        input: z
+          .string()
+          .min(1)
+          .max(8000)
+          .refine((text) => Array.from(text).length <= 4000, '朗读稿最多 4000 字符'),
+        voice: z.string().max(200).default(''),
+        language: speechLanguageSchema.removeDefault().optional(),
+        draft: speechDraft.optional(),
+      })
+      .parse(req.body);
+    const settings = { ...store.settings(req.workspace), ...draft };
+    const engine = speechEngine(settings);
     const provider = settings.providers.find(
       (p) => p.id === settings.speechProvider && p.kind === 'speech',
     );
-    if (!provider)
+    if (engine === 'browser' || (engine === 'custom' && !provider))
       throw Object.assign(Error('请配置语音服务，或使用浏览器朗读'), { statusCode: 400 });
     const controller = new AbortController();
     reply.raw.on('close', () => {
       if (!reply.raw.writableEnded) controller.abort();
     });
+    if (engine === 'vits')
+      return reply
+        .type('audio/wav')
+        .send(
+          await vits.synthesize(
+            req.workspace,
+            settings,
+            input,
+            voice,
+            language ?? settings.speechLanguage,
+            controller.signal,
+          ),
+        );
     return reply
       .type('audio/mpeg')
       .send(
         await synthesize(
-          provider,
+          provider!,
           settings,
           input,
           voice,

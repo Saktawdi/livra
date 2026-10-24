@@ -29,6 +29,8 @@ const icons: Record<string, any> = {
   generate_music: Music2,
   create_slides: Presentation,
   create_marp_theme: Palette,
+  create_skin: Palette,
+  list_skins: Palette,
   create_persona: Sparkles,
 };
 export function Tools({

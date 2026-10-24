@@ -47,6 +47,8 @@ import { Button, IconButton, Markdown, CopyButton, Modal } from './ui';
 import type { Notify, Approval } from './App';
 
 const toolNames: Record<string, string> = {
+  create_skin: '设计应用皮肤',
+  list_skins: '查找皮肤',
   list_tools: '检查工具',
   set_emotion: '更新情绪',
   remember: '保存记忆',
@@ -59,6 +61,13 @@ const toolNames: Record<string, string> = {
   list_live2d_models: '查找人偶形象',
 };
 const shortcuts = [
+  {
+    command: '/skin',
+    label: '设计皮肤',
+    icon: Image,
+    text: '请用 create_skin 为我设计一套应用皮肤。我的风格要求是：',
+    tool: 'create_skin',
+  },
   {
     command: '/image',
     label: '生成图像',
@@ -110,6 +119,7 @@ type Props = {
   onPersona: (id: string) => void;
   onSettings: () => void;
   onUseTheme: (id: string) => void;
+  onAppearancePreview: (settings: Settings | null) => void;
   detachedPresence: boolean;
   onDetachPresence: () => void;
   focusRequest: number;
@@ -134,6 +144,7 @@ export function Chat({
   onPersona,
   onSettings,
   onUseTheme,
+  onAppearancePreview,
   detachedPresence,
   onDetachPresence,
   focusRequest,
@@ -179,6 +190,7 @@ export function Chat({
   const {
     speaking,
     preparing,
+    stage: voiceStage,
     level,
     speak,
     stop: stopVoice,
@@ -514,7 +526,15 @@ export function Chat({
                         <div className="message-actions">
                           <CopyButton text={m.content} />
                           <IconButton
-                            label={preparing ? '取消语音合成' : speaking ? '停止朗读' : '朗读回复'}
+                            label={
+                              preparing
+                                ? `${voiceStage} · 点击取消`
+                                : speaking
+                                  ? '停止朗读'
+                                  : settings.speechMode === 'summary'
+                                    ? '总结朗读回复'
+                                    : '纯朗读回复'
+                            }
                             onClick={() => speak(m.content)}
                           >
                             {preparing ? (
@@ -839,6 +859,7 @@ export function Chat({
         <ArtifactPreview
           id={artifactId}
           onUseTheme={onUseTheme}
+          onAppearancePreview={onAppearancePreview}
           onClose={() => setArtifactId('')}
           settings={settings}
           saveSettings={saveSettings}
