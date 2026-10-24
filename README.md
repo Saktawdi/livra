@@ -8,7 +8,7 @@
 
 **与人偶同桌。** 一个有角色在场的个人 Agent 工作台：聊日常，也一起完成事情。开源、自部署，自由选择模型、声音和 Live2D 形象。
 
-![Livra 相伴空间](docs/images/rsi2-desktop-companion.png)
+![Livra 当前工作台](docs/images/workspace-current.png)
 
 相伴时，人偶留在桌边；共事时，展开执行步骤和作品。切换空间保留对话上下文，工具产物可以就地打开。
 
@@ -21,9 +21,11 @@
 - **声音**：公共 VITS、Fish Audio 原生 TTS、OpenAI 兼容 TTS、浏览器朗读；人偶可覆盖全局音色与朗读语言。
 - **日常操作**：会话分组、排序、置顶与归档；明暗主题、键盘快速访问、斜杠工具、附件、草稿保留、移动端布局和数据导入导出。
 
-![共事与工具执行](docs/images/rsi2-agent-flow.png)
+![外观设置中的皮肤设计](docs/images/skin-settings-current.png)
 
-上图使用明确标注的本地模拟服务验收多轮执行，不表示真实上游模型的输出质量。
+![深色皮肤作品预览](docs/images/skin-preview-current.png)
+
+截图展示当前版本的工作台、皮肤设计和作品预览。
 
 ## 快速启动
 
