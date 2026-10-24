@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-25",
+  "checks": {"typescript": "passed", "tests": {"passed": 26, "failed": 0}, "productionBuild": "passed", "prettier": "passed", "diffWhitespace": "passed"},
+  "browser": {
+    "reviewUrl": "http://localhost:3416/",
+    "settingsHeightDesktop": {"viewport": [1440, 960], "tabs": 7, "heightPx": 820},
+    "settingsHeightMobile": {"viewport": [390, 844], "tabsChecked": ["models", "appearance", "voice"], "heightPx": 793.359375},
+    "connectionEditor": {"dialogCountWhileAdding": 1, "draftRetainedOnSwitch": true, "cancelDiscardsDraft": true, "defaultModelTracksManualList": true},
+    "whale": {"actualCanvasRendered": true, "manualReactionsAvailable": true, "crossPageCompanion": true, "keyboardPositionMovementPx": 16, "collapse": true},
+    "marp": {"createSave": true, "reuseFromGallery": true, "selectedThemeInMarkdown": true, "previewStyleApplied": true, "saveSlides": true},
+    "concurrency": {"provider": "local mock; no external model calls", "simultaneousConversations": 2, "continueOutsideChat": true, "stopOneLeavesOtherRunning": true, "manualCompanionActionsDisabledWhileRunning": true},
+    "cleanup": {"mockServerStopped": true, "temporaryTabClosed": true, "viewportReset": true},
+    "incident": "Temporary localhost test server shared the review cookie. Restored the review session to its original existing workspace; persona/theme records preserved. Future test servers must use a different hostname."
+  },
+  "limitations": ["Companion stays inside the Livra webpage", "Closing or reloading the page interrupts its active streams", "No external provider quality, cost, or long-duration load validation"],
+  "userDesignAcceptance": "pending"
+}

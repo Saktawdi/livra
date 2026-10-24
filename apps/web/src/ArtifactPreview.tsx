@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Download, Plus, Music2 } from 'lucide-react';
+import { Download, Music2, Presentation } from 'lucide-react';
 import type { Artifact, Settings } from '@livra/shared';
-import { personaSchema } from '@livra/shared';
+import { PersonaArtifact } from './PersonaArtifact';
 import { api, download } from './api';
 import { Modal, Button, Badge } from './ui';
 import type { Notify } from './App';
@@ -12,12 +12,14 @@ export function ArtifactPreview({
   settings,
   saveSettings,
   notify,
+  onUseTheme,
 }: {
   id: string;
   onClose: () => void;
   settings: Settings;
   saveSettings: (s: Settings) => Promise<Settings>;
   notify: Notify;
+  onUseTheme: (id: string) => void;
 }) {
   const [item, setItem] = useState<Artifact | null>(null),
     [error, setError] = useState('');
@@ -111,29 +113,13 @@ export function ArtifactPreview({
               <pre className="artifact-code">{item.data.css || item.data.content}</pre>
             )}
             {item.kind === 'persona' && (
-              <div className="persona-artifact">
-                <span>{item.data.persona?.symbol}</span>
-                <h2>{item.data.persona?.name}</h2>
-                <p>{item.data.persona?.description}</p>
-                <Button
-                  variant="primary"
-                  onClick={async () => {
-                    try {
-                      const p = personaSchema.parse({
-                        ...item.data.persona,
-                        id: crypto.randomUUID(),
-                      });
-                      await saveSettings({ ...settings, personas: [...settings.personas, p] });
-                      notify('人偶已添加');
-                    } catch (e) {
-                      notify((e as Error).message, 'error');
-                    }
-                  }}
-                >
-                  <Plus size={16} />
-                  添加人偶
-                </Button>
-              </div>
+              <PersonaArtifact
+                persona={item.data.persona}
+                liveModel={item.data.liveModel}
+                settings={settings}
+                saveSettings={saveSettings}
+                notify={notify}
+              />
             )}
             {item.data.prompt && (
               <details className="source-details">
@@ -160,6 +146,18 @@ export function ArtifactPreview({
               onClick={() => download(item.title + '.html', item.data.html, 'text/html')}
             >
               导出 HTML
+            </Button>
+          )}
+          {item?.kind === 'theme' && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                onClose();
+                onUseTheme(item.id);
+              }}
+            >
+              <Presentation size={15} />
+              用此主题创作
             </Button>
           )}
         </div>

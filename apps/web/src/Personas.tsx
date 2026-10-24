@@ -9,6 +9,7 @@ import {
   Eye,
   Wrench,
   Brain,
+  Box,
 } from 'lucide-react';
 import {
   personaSchema,
@@ -19,8 +20,9 @@ import {
   type Memory,
 } from '@livra/shared';
 import { api, download, post } from './api';
-import { PageIntro, Button, IconButton, Modal, Field, Badge, Toggle, Empty } from './ui';
+import { PageIntro, Button, IconButton, Modal, Field, Badge, Toggle, Empty, Select } from './ui';
 import { LiveAvatar } from './LiveAvatar';
+import { LiveModelLibrary } from './LiveModelLibrary';
 import type { Notify } from './App';
 
 export function PersonaLibrary({
@@ -44,6 +46,7 @@ export function PersonaLibrary({
     [memories, setMemories] = useState<Memory[]>([]),
     [memoryPersona, setMemoryPersona] = useState<Persona | null>(null),
     [saving, setSaving] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const [previewId, setPreviewId] = useState(settings.personas[0]?.id || '');
   useEffect(() => {
@@ -89,6 +92,10 @@ export function PersonaLibrary({
         description="设定人格、声音和能力。"
         action={
           <div className="button-row">
+            <Button onClick={() => setLibraryOpen(true)}>
+              <Box size={16} />
+              形象库
+            </Button>
             <Button onClick={() => importRef.current?.click()}>
               <Upload size={15} />
               导入人偶卡
@@ -165,7 +172,7 @@ export function PersonaLibrary({
                 <PersonaPortrait
                   persona={p}
                   reducedMotion={settings.reducedMotion}
-                  active={previewId === p.id && !editing}
+                  active={previewId === p.id && !editing && !libraryOpen}
                   onActivate={() => setPreviewId(p.id)}
                 />
                 <Badge>{p.mode === 'companion' ? '陪伴' : '工作'}</Badge>
@@ -227,6 +234,9 @@ export function PersonaLibrary({
           persona={editing}
           tools={tools}
           saving={saving}
+          settings={settings}
+          saveSettings={saveSettings}
+          notify={notify}
           onSave={save}
           onClose={() => setEditing(null)}
           onDelete={
@@ -255,6 +265,24 @@ export function PersonaLibrary({
           onClose={() => setMemoryPersona(null)}
           onChange={() => api('/memories').then(setMemories)}
           notify={notify}
+        />
+      )}
+      {libraryOpen && (
+        <LiveModelLibrary
+          settings={settings}
+          saveSettings={saveSettings}
+          notify={notify}
+          onClose={() => setLibraryOpen(false)}
+          onChoose={(m) => {
+            setLibraryOpen(false);
+            void edit({
+              ...structuredClone(defaultPersonas[0]),
+              id: crypto.randomUUID(),
+              name: '新的伙伴',
+              description: '',
+              live: structuredClone(m.live),
+            });
+          }}
         />
       )}
     </div>
@@ -311,6 +339,9 @@ function PersonaEditor({
   onSave,
   onDelete,
   saving,
+  settings,
+  saveSettings,
+  notify,
 }: {
   persona: Persona;
   tools: ToolInfo[];
@@ -318,16 +349,20 @@ function PersonaEditor({
   onSave: (p: Persona) => void;
   onDelete?: () => void;
   saving: boolean;
+  settings: Settings;
+  saveSettings: (s: Settings) => Promise<Settings>;
+  notify: Notify;
 }) {
   const [p, setP] = useState(persona),
     [tab, setTab] = useState('personality');
+  const [choosingModel, setChoosingModel] = useState(false);
   const patch = (data: Partial<Persona>) => setP((prev) => ({ ...prev, ...data }));
   const live = (data: Partial<Persona['live']>) => patch({ live: { ...p.live, ...data } });
   return (
     <Modal title="编辑人偶" onClose={onClose} wide>
       <div className="persona-editor">
         <div className="persona-editor-preview">
-          <LiveAvatar persona={p} mood="happy" />
+          {!choosingModel && <LiveAvatar persona={p} mood="happy" />}
           <div>
             <h2>{p.name}</h2>
             <p>{p.subtitle}</p>
@@ -360,10 +395,14 @@ function PersonaEditor({
                   />
                 </Field>
                 <Field label="类型">
-                  <select value={p.mode} onChange={(e) => patch({ mode: e.target.value as any })}>
-                    <option value="companion">陪伴型</option>
-                    <option value="work">工作型</option>
-                  </select>
+                  <Select
+                    value={p.mode}
+                    onChange={(value) => patch({ mode: value as Persona['mode'] })}
+                    options={[
+                      { value: 'companion', label: '陪伴型' },
+                      { value: 'work', label: '工作型' },
+                    ]}
+                  />
                 </Field>
               </div>
               <Field label="一句话介绍">
@@ -430,14 +469,10 @@ function PersonaEditor({
           )}
           {tab === 'live' && (
             <>
-              <div className="preset-row">
-                <button onClick={() => live(structuredClone(defaultPersonas[0].live))}>
-                  Hiyori 示例
-                </button>
-                <button onClick={() => live(structuredClone(defaultPersonas[1].live))}>
-                  Haru 示例
-                </button>
-              </div>
+              <Button className="choose-live-model" onClick={() => setChoosingModel(true)}>
+                <Box size={17} />
+                从形象库选择
+              </Button>
               <Field
                 label="模型地址"
                 hint="支持 Cubism 3 / 4 的 .model3.json；可使用本地 /models/ 路径或支持跨域的远程地址。"
@@ -459,6 +494,16 @@ function PersonaEditor({
                     step="0.05"
                     value={p.live.scale}
                     onChange={(e) => live({ scale: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label={'水平位置 · ' + p.live.offsetX.toFixed(2)}>
+                  <input
+                    type="range"
+                    min="-0.5"
+                    max="0.5"
+                    step="0.02"
+                    value={p.live.offsetX}
+                    onChange={(e) => live({ offsetX: Number(e.target.value) })}
                   />
                 </Field>
                 <Field label={'垂直位置 · ' + p.live.offsetY.toFixed(2)}>
@@ -513,10 +558,6 @@ function PersonaEditor({
                   </Field>
                 ))}
               </div>
-              <p className="setting-note">
-                内置 Live2D 官方 Haru 与 Hiyori
-                示例。人格与模型独立，可以共享形象或连接你自己的授权模型。
-              </p>
             </>
           )}
           {tab === 'tools' && (
@@ -569,6 +610,19 @@ function PersonaEditor({
           </Button>
         </div>
       </div>
+      {choosingModel && (
+        <LiveModelLibrary
+          settings={settings}
+          selectedUrl={p.live.modelUrl}
+          saveSettings={saveSettings}
+          notify={notify}
+          onClose={() => setChoosingModel(false)}
+          onChoose={(m) => {
+            live(structuredClone(m.live));
+            setChoosingModel(false);
+          }}
+        />
+      )}
     </Modal>
   );
 }

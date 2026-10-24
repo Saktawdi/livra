@@ -11,6 +11,8 @@ import {
 import { X, LoaderCircle } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { Select } from './Select';
+export { Select };
 
 export function Button({
   children,
@@ -54,11 +56,13 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  className = '',
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null),
     titleId = useId();
@@ -74,7 +78,7 @@ export function Modal({
   }, []);
   return (
     <dialog
-      className={`modal ${wide ? 'wide' : ''}`}
+      className={`modal ${wide ? 'wide' : ''} ${className}`}
       aria-labelledby={titleId}
       ref={ref}
       onCancel={(e) => {
@@ -116,8 +120,8 @@ export function Field({
   const id = useId();
   const control =
     isValidElement(children) &&
-    typeof children.type === 'string' &&
-    ['input', 'select', 'textarea'].includes(children.type);
+    (children.type === Select ||
+      (typeof children.type === 'string' && ['input', 'textarea'].includes(children.type)));
   return (
     <div className="field">
       {control ? (
@@ -126,6 +130,7 @@ export function Field({
           {cloneElement(children as ReactElement<any>, {
             id,
             'aria-describedby': hint ? id + '-hint' : undefined,
+            ...(children.type === Select ? { 'aria-label': label } : {}),
           })}
         </>
       ) : (
@@ -143,11 +148,13 @@ export function Toggle({
   onChange,
   label,
   description,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   description?: string;
+  disabled?: boolean;
 }) {
   return (
     <label className="toggle-row">
@@ -155,7 +162,12 @@ export function Toggle({
         <strong>{label}</strong>
         {description && <small>{description}</small>}
       </span>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input
+        type="checkbox"
+        disabled={disabled}
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
       <span className="switch" />
     </label>
   );

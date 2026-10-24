@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-25",
+  "scope": "User acceptance items 9–13",
+  "reviewUrl": "http://localhost:3416/",
+  "checks": { "typescript": "passed", "tests": { "passed": 29, "failed": 0 }, "productionBuild": "passed", "format": "passed" },
+  "browser": {
+    "desktop": [1440, 960],
+    "mobile": [390, 844],
+    "mobileDialog": { "width": 354, "height": 793.359375, "pageHorizontalOverflow": false },
+    "preview": { "skins": ["orbit", "paper", "veil"], "cancelRollback": true, "backgroundUpload": "synthetic PNG converted to WebP", "savedBackground": { "opacity": 0.3, "blur": 1, "survivesReload": true }, "skinExportImport": true, "reducedMotion": true, "bubbleRadiusPreview": 17 },
+    "live2d": { "model": "bundled whale", "horizontalOffsetPreview": 0.1, "editorChangesCancelled": true },
+    "companion": { "directPointerDrag": { "from": [1176, 520], "to": [966, 610] }, "idle": { "background": "transparent", "border": 0, "controls": "hidden" }, "hoverAndKeyboardFocus": "controls visible", "keyboardMovementAndEscape": true },
+    "finalConsoleErrors": []
+  },
+  "anySearch": { "transport": "official REST POST /v1/search", "anonymousLiveRequest": "returned 6 results", "keyedContract": "local HTTP integration test", "errorPrivacy": "HTTP 402 credentials excluded from tool errors" },
+  "screenshots": ["skin-orbit.png", "skin-paper.png", "skin-veil.png", "skin-settings-mobile.png", "persona-horizontal-position.png", "anysearch-settings.png", "companion-character-only.png"],
+  "limits": ["Floating companion stays within the Livra webpage.", "Paid AnySearch quota and real upstream rate limits were not exercised.", "User design acceptance remains pending; no self-awarded score."],
+  "cleanup": { "syntheticBackgroundRemoved": true, "viewportOverrideReset": true, "reviewServerRunning": true }
+}

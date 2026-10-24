@@ -3,13 +3,15 @@ import type { Conversation, Message, Provider, Settings, WireMessage } from '@li
 import { complete } from './providers.ts';
 import { executeTool, functionTools, type Context } from './tools.ts';
 import { safeError } from './network.ts';
+import { estimateTextTokens } from '../../../packages/shared/src/token-metrics.ts';
+import { saktaApiBaseUrl } from './sakta.ts';
 
 export function resolveProvider(settings: Settings, id: string): Provider | undefined {
   if (id === 'sakta' && settings.sakta?.token && process.env.SAKTA_BASE_URL !== '')
     return {
       id: 'sakta',
-      name: 'Sakta 免费模型',
-      baseUrl: (process.env.SAKTA_BASE_URL || 'https://api.sakta.top').replace(/\/$/, '') + '/v1',
+      name: 'Sakta',
+      baseUrl: saktaApiBaseUrl(),
       protocol: 'openai',
       apiKey: settings.sakta.token,
       models: [],
@@ -41,6 +43,8 @@ export async function runAgent(
     reasoning: '',
     tools: [],
     created: Date.now(),
+    providerId: provider.id,
+    model,
   };
   conversation.messages.push(input, reply);
   conversation.updated = Date.now();
@@ -88,8 +92,13 @@ export async function runAgent(
   try {
     const usage = { input: 0, output: 0, total: 0 };
     let reported = false;
+    let outputTokens = 0,
+      durationMs = 0;
+    let allUsageReported = true;
     for (let step = 0; step < 12; step++) {
       if (ctx.signal.aborted) throw ctx.signal.reason;
+      let firstTokenAt = 0,
+        roundText = '';
       const result = await complete(
         provider,
         model,
@@ -100,17 +109,41 @@ export async function runAgent(
         (type, text) => {
           if (type === 'delta') reply.content += text;
           else reply.reasoning += text;
-          emit({ type, text });
+          roundText += text;
+          if (!firstTokenAt) firstTokenAt = performance.now();
+          const elapsed = performance.now() - firstTokenAt;
+          reply.generation = {
+            outputTokens: outputTokens + (elapsed >= 100 ? estimateTextTokens(roundText) : 0),
+            durationMs: durationMs + (elapsed >= 100 ? elapsed : 0),
+            estimated: elapsed >= 100 || !allUsageReported,
+          };
+          emit({ type, text, generation: reply.generation });
         },
       );
+      // A single buffered chunk has no measurable stream interval. Including its
+      // tokens would inflate the rate of later streamed rounds.
+      if ((result.streamDurationMs || 0) >= 100) {
+        durationMs += result.streamDurationMs!;
+        outputTokens +=
+          result.usage?.output ??
+          estimateTextTokens(
+            result.content +
+              result.reasoning +
+              (result.calls.length ? JSON.stringify(result.calls) : ''),
+          );
+        allUsageReported &&= !!result.usage;
+      }
+      reply.generation = { outputTokens, durationMs, estimated: !allUsageReported };
+      reply.contextTokens = result.usage ? result.usage.input + result.usage.output : undefined;
       if (result.usage) {
         reported = true;
         usage.input += result.usage.input;
         usage.output += result.usage.output;
         usage.total += result.usage.total;
         reply.usage = { ...usage };
-        emit({ type: 'usage', usage: { ...usage } });
+        emit({ type: 'usage', usage: { ...usage }, contextTokens: reply.contextTokens });
       }
+      emit({ type: 'metrics', generation: reply.generation, contextTokens: reply.contextTokens });
       history.push({
         role: 'assistant',
         content: result.content || null,

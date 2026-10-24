@@ -35,17 +35,26 @@ export function validateUrl(value: string) {
     throw Error('仅支持不含用户凭据的 HTTP(S) 地址');
   return url;
 }
-const agents = new Map<boolean, Agent>();
-function agent(allowPrivate: boolean) {
-  if (!agents.has(allowPrivate))
+export function networkAddressBlocked(ip: string, allowPrivate = false, allowProxyDns = false) {
+  const proxyDnsAddress = isIP(ip) === 4 && /^198\.(18|19)\./.test(ip);
+  return !allowPrivate && privateAddress(ip) && !(allowProxyDns && proxyDnsAddress);
+}
+const agents = new Map<string, Agent>();
+function agent(allowPrivate: boolean, allowProxyDns: boolean) {
+  const key = `${allowPrivate}:${allowProxyDns}`;
+  if (!agents.has(key))
     agents.set(
-      allowPrivate,
+      key,
       new Agent({
         connect: {
           lookup: ((hostname: string, options: any, callback: any) => {
             lookup(hostname, { all: true })
               .then((addresses) => {
-                if (!allowPrivate && addresses.some((a) => privateAddress(a.address)))
+                if (
+                  addresses.some((a) =>
+                    networkAddressBlocked(a.address, allowPrivate, allowProxyDns),
+                  )
+                )
                   throw Error('目标是内网地址。自部署管理员可设置 ALLOW_PRIVATE_ENDPOINTS=true');
                 if (!addresses.length) throw Error('无法解析服务地址');
                 if (options?.all) callback(null, addresses);
@@ -56,23 +65,33 @@ function agent(allowPrivate: boolean) {
         },
       }),
     );
-  return agents.get(allowPrivate)!;
+  return agents.get(key)!;
 }
 export async function network(
   url: string,
   init: RequestInit = {},
   allowPrivate = process.env.ALLOW_PRIVATE_ENDPOINTS === 'true',
+  allowProxyDns = false,
 ) {
   const parsed = validateUrl(url);
   const literal = parsed.hostname.replace(/^\[|\]$/g, '');
-  if (!allowPrivate && isIP(literal) && privateAddress(literal)) throw Error('禁止请求内网地址');
+  if (isIP(literal) && networkAddressBlocked(literal, allowPrivate, allowProxyDns))
+    throw Error('禁止请求内网地址');
   const result = await transport(parsed, {
     ...(init as any),
-    dispatcher: agent(allowPrivate),
+    dispatcher: agent(allowPrivate, allowProxyDns),
     redirect: 'error',
     signal: AbortSignal.any([AbortSignal.timeout(180_000), ...(init.signal ? [init.signal] : [])]),
   });
   return result as unknown as Response;
+}
+export class UpstreamResponseError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
 }
 export async function readJson(response: Response, limit = 4_000_000): Promise<any> {
   const reader = response.body?.getReader();
@@ -95,11 +114,12 @@ export async function readJson(response: Response, limit = 4_000_000): Promise<a
   try {
     data = JSON.parse(text);
   } catch {
-    throw Error(`服务未返回 JSON（HTTP ${response.status}）`);
+    throw new UpstreamResponseError(`服务未返回 JSON（HTTP ${response.status}）`, response.status);
   }
   if (!response.ok)
-    throw Error(
+    throw new UpstreamResponseError(
       `HTTP ${response.status}: ${String(data.error?.message || data.msg || data.message || response.statusText).slice(0, 400)}`,
+      response.status,
     );
   return data;
 }

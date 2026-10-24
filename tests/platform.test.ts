@@ -6,14 +6,254 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createApp } from '../apps/server/src/app.ts';
-import { defaultSettings } from '@livra/shared';
+import {
+  defaultSettings,
+  liveModelSchema,
+  builtInLiveModels,
+  applyMarpTheme,
+  marpThemeName,
+  whaleLiveModel,
+} from '@livra/shared';
 import { complete, listModels, sse } from '../apps/server/src/providers.ts';
 import { synthesize } from '../apps/server/src/speech.ts';
-import { privateAddress, network } from '../apps/server/src/network.ts';
+import { privateAddress, network, networkAddressBlocked } from '../apps/server/src/network.ts';
 import { renderSlides } from '../apps/server/src/tools.ts';
 import { runs } from '../apps/server/src/agent.ts';
+import { executeTool, functionTools, type Context } from '../apps/server/src/tools.ts';
+import { LiveModelService } from '../apps/server/src/live-models.ts';
 
 process.env.ALLOW_PRIVATE_ENDPOINTS = 'true';
+test('Marp theme selection preserves frontmatter and uses the CSS identifier', () => {
+  assert.equal(marpThemeName('/* @theme ocean */\nsection{color:blue}'), 'ocean');
+  for (const newline of ['\n', '\r\n']) {
+    const markdown = [
+      '---',
+      'marp: true',
+      'theme: default',
+      'paginate: true',
+      '---',
+      '# Title',
+    ].join(newline);
+    assert.equal(
+      applyMarpTheme(markdown, 'ocean'),
+      markdown.replace('theme: default', 'theme: ocean'),
+    );
+    assert.equal(
+      applyMarpTheme(['---', '---', '# Title'].join(newline), 'ocean'),
+      ['---', 'theme: ocean', '---', '# Title'].join(newline),
+    );
+  }
+  assert.equal(
+    applyMarpTheme('# Title\n\n---\n# Page 2', 'ocean'),
+    '---\ntheme: ocean\n---\n\n# Title\n\n---\n# Page 2',
+  );
+});
+
+test('saved themes can be discovered and reused after renaming; slides retain a CSS snapshot', async (t) => {
+  const { app, cookie, settings, store } = await fixture(t);
+  const call = (name: string, args: any, session = cookie) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/tools/execute',
+      headers: { ...headers, cookie: session },
+      payload: { name, args },
+    });
+  const created = await call('create_marp_theme', {
+    name: 'ocean',
+    css: 'section { background: #123abc; }',
+  });
+  assert.equal(created.statusCode, 200, created.body);
+  const themeId = created.json().artifactId;
+  await app.inject({
+    method: 'PATCH',
+    url: '/api/artifacts/' + themeId,
+    headers: { ...headers, cookie },
+    payload: { title: '我的海洋主题' },
+  });
+  const listing = await call('list_marp_themes', { query: '海洋', limit: 1 });
+  assert.deepEqual(
+    listing.json().themes.map((t: any) => [t.id, t.name, t.title]),
+    [[themeId, 'ocean', '我的海洋主题']],
+  );
+  const rendered = await call('create_slides', {
+    title: 'Reuse',
+    markdown: '---\ntheme: default\n---\n# Hello',
+    themeId,
+  });
+  assert.equal(rendered.statusCode, 200, rendered.body);
+  const saved = (
+    await app.inject({ url: '/api/artifacts/' + rendered.json().artifactId, headers: { cookie } })
+  ).json();
+  assert.match(saved.data.markdown, /theme: ocean/);
+  assert.match(saved.data.html, /#123abc/);
+  assert.equal(saved.data.themeId, themeId);
+  assert.match(saved.data.theme, /@theme ocean/);
+  const other = (await app.inject('/api/bootstrap')).headers['set-cookie']!.toString().split(
+    ';',
+  )[0];
+  const foreign = await call(
+    'create_slides',
+    { title: 'Forbidden', markdown: '# Test', themeId },
+    other,
+  );
+  assert.notEqual(foreign.statusCode, 200);
+  assert.match(foreign.body, /主题不存在/);
+  const invalid = await call('create_slides', {
+    title: 'Forbidden',
+    markdown: '# Test',
+    themeId,
+    theme: '/* @theme duplicate */',
+  });
+  assert.notEqual(invalid.statusCode, 200);
+  await app.inject({
+    method: 'DELETE',
+    url: '/api/artifacts/' + themeId,
+    headers: { ...headers, cookie },
+  });
+  const missing = await call('create_slides', { title: 'Missing', markdown: '# Test', themeId });
+  assert.notEqual(missing.statusCode, 200);
+  assert.match(renderSlides(saved.data.markdown, saved.data.theme), /#123abc/);
+  const ctx = {
+    store,
+    liveModels: new LiveModelService(store),
+    workspace: store.session(cookie.split('=')[1])!,
+    settings,
+    persona: { ...settings.personas[0], tools: ['create_slides'] },
+    signal: new AbortController().signal,
+    emit: () => {},
+  } as Context;
+  assert.ok(functionTools(ctx).some((t) => t.function.name === 'list_marp_themes'));
+  assert.equal((await executeTool('list_marp_themes', {}, ctx)).total, 0);
+  ctx.persona = { ...ctx.persona, tools: [] };
+  await assert.rejects(executeTool('list_marp_themes', {}, ctx), /未对当前人偶开放/);
+});
+
+test('two conversations stream independently; duplicate runs conflict and stop is scoped', async (t) => {
+  const outputs = new Map<string, ServerResponse>();
+  const base = await mock(t, (_req, res, body) => {
+    const name = body.messages.findLast((m: any) => m.role === 'user').content;
+    outputs.set(name, res);
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.write(
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'reply ' + name } }] }) + '\n\n',
+    );
+  });
+  const { app, cookie, settings, store } = await fixture(t);
+  settings.providers = [
+    { id: 'p', name: 'mock', protocol: 'openai', kind: 'chat', models: ['test'], baseUrl: base },
+  ];
+  await app.inject({
+    method: 'PUT',
+    url: '/api/settings',
+    headers: { ...headers, cookie },
+    payload: settings,
+  });
+  const create = async () =>
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/conversations',
+        headers: { ...headers, cookie },
+        payload: { personaId: 'atlas' },
+      })
+    ).json();
+  const first = await create(),
+    second = await create();
+  const start = (id: string, content: string) =>
+    Promise.resolve(
+      app.inject({
+        method: 'POST',
+        url: '/api/runs',
+        headers: { ...headers, cookie },
+        payload: { conversationId: id, providerId: 'p', model: 'test', content },
+      }),
+    );
+  const pendingA = start(first.id, 'A');
+  await until(() => outputs.has('A'));
+  const pendingB = start(second.id, 'B');
+  await until(() => outputs.has('B'));
+  assert.equal((await start(first.id, 'duplicate')).statusCode, 409);
+  const workspace = store.session(cookie.split('=')[1])!;
+  const a = [...runs.values()].find(
+    (r) => r.workspace === workspace && r.conversationId === first.id,
+  )!;
+  const b = [...runs.values()].find(
+    (r) => r.workspace === workspace && r.conversationId === second.id,
+  )!;
+  assert.ok(a && b);
+  const preferences = await app.inject({
+    method: 'PUT',
+    url: '/api/settings',
+    headers: { ...headers, cookie },
+    payload: { ...settings, theme: 'light' },
+  });
+  assert.equal(preferences.statusCode, 200);
+  assert.equal(a.controller.signal.aborted, false);
+  assert.equal(b.controller.signal.aborted, false);
+  const other = (await app.inject('/api/bootstrap')).headers['set-cookie']!.toString().split(
+    ';',
+  )[0];
+  assert.equal(
+    (
+      await app.inject({
+        method: 'POST',
+        url: `/api/runs/${a.id}/stop`,
+        headers: { ...headers, cookie: other },
+        payload: {},
+      })
+    ).statusCode,
+    200,
+  );
+  assert.equal(a.controller.signal.aborted, false);
+  await app.inject({
+    method: 'POST',
+    url: `/api/runs/${a.id}/stop`,
+    headers: { ...headers, cookie },
+    payload: {},
+  });
+  assert.equal((await pendingA).statusCode, 200);
+  assert.equal(b.controller.signal.aborted, false);
+  outputs.get('B')!.end('data: [DONE]\n\n');
+  assert.equal((await pendingB).statusCode, 200);
+  const savedA = store.get<any>(workspace, 'conversation', first.id),
+    savedB = store.get<any>(workspace, 'conversation', second.id);
+  assert.equal(savedA.messages[1].content, 'reply A');
+  assert.equal(savedA.messages[1].interrupted, true);
+  assert.equal(savedB.messages[1].content, 'reply B');
+  assert.ok(!savedB.messages[1].interrupted);
+  assert.ok(![...runs.values()].some((r) => r.workspace === workspace));
+});
+
+test('bundled whale references real assets and all configured expressions and motions', () => {
+  const root = join(import.meta.dirname, '../apps/web/public/models/whale');
+  const model = JSON.parse(readFileSync(join(root, 'c_0120.model3.json'), 'utf8'));
+  const refs = model.FileReferences;
+  const expressions = new Set(refs.Expressions.map((e: any) => e.Name));
+  assert.equal(expressions.size, 44);
+  for (const reaction of [
+    ...Object.values(whaleLiveModel.live.reactions),
+    ...Object.values(whaleLiveModel.live.expressions).map((expression) => ({
+      expression,
+      motion: '',
+    })),
+  ]) {
+    if (reaction.expression) assert.ok(expressions.has(reaction.expression), reaction.expression);
+    if (reaction.motion) assert.ok(refs.Motions[reaction.motion], reaction.motion);
+  }
+  for (const file of [
+    refs.Moc,
+    ...refs.Textures,
+    refs.Physics,
+    refs.DisplayInfo,
+    ...refs.Expressions.map((e: any) => e.File),
+    ...Object.values(refs.Motions)
+      .flat()
+      .map((m: any) => m.File),
+  ].filter(Boolean))
+    assert.ok(readFileSync(join(root, file)).length > 0, file);
+  assert.equal(readFileSync(join(root, refs.Moc))[4], 4);
+  assert.match(readFileSync(join(root, 'LIVRA-NOTICE.md'), 'utf8'), /CC BY-NC-SA 4.0/);
+});
 const directory = () => mkdtempSync(join(tmpdir(), 'livra-test-'));
 const headers = { 'x-livra-client': 'web' };
 async function fixture(t: any) {
@@ -26,11 +266,13 @@ async function fixture(t: any) {
   });
   const bootstrap = await app.inject('/api/bootstrap');
   const cookie = bootstrap.headers['set-cookie']!.toString().split(';')[0];
+  const settings = { ...bootstrap.json().settings, liveModelSources: [] } as typeof defaultSettings;
+  store.saveSettings(store.session(cookie.split('=')[1])!, settings);
   return {
     app,
     store,
     cookie,
-    settings: bootstrap.json().settings as typeof defaultSettings,
+    settings,
     path,
   };
 }
@@ -161,12 +403,19 @@ test('private network requests are blocked by default, including literal IPv6', 
     '::ffff:127.0.0.1',
     '::ffff:7f00:1',
     'fc00::1',
-  ])
+  ]) {
     assert.equal(privateAddress(ip), true, ip);
+    assert.equal(networkAddressBlocked(ip, false, true), true, ip);
+  }
+  for (const ip of ['198.18.0.0', '198.18.255.255', '198.19.255.255']) {
+    assert.equal(networkAddressBlocked(ip), true, ip);
+    assert.equal(networkAddressBlocked(ip, false, true), false, ip);
+  }
   assert.equal(privateAddress('1.1.1.1'), false);
   assert.equal(privateAddress('2606:4700:4700::1111'), false);
   await assert.rejects(network('http://127.0.0.1:1', {}, false));
   await assert.rejects(network('http://[::ffff:127.0.0.1]:1', {}, false));
+  await assert.rejects(network('http://127.0.0.1:1', {}, false, true), /禁止请求内网地址/);
   await assert.rejects(network('file:///etc/passwd', {}, false));
 });
 test('SSE parser preserves UTF-8 across fragments and CRLF frames', async () => {
@@ -335,16 +584,122 @@ test('Sakta login uses form encoding, checks business code, and keeps token on s
   assert.ok(!good.body.includes('sakta-token-private'));
   assert.equal(good.json().settings.sakta.connected, true);
 });
+test('Sakta proxy uses the documented v1 Bearer contract and preserves upstream model failures', async (t) => {
+  const prior = process.env.SAKTA_BASE_URL;
+  let status = 200;
+  let payload: any = { object: 'list', data: [{ id: 'models/custom' }, { id: 'remote/model' }] };
+  let lastPath = '';
+  const base = await mock(t, (req, res, body) => {
+    lastPath = req.url!;
+    const route = req.url!.replace(/^\/gateway/, '');
+    res.setHeader('Content-Type', 'application/json');
+    if (route === '/v1/user/pub/login') {
+      assert.equal(req.method, 'POST');
+      assert.equal(req.headers['content-type'], 'application/x-www-form-urlencoded');
+      assert.equal(new URLSearchParams(body).get('password'), 'test-password');
+      res.end(JSON.stringify({ code: 0, token: 'sakta-contract-secret' }));
+      return;
+    }
+    assert.equal(req.headers.authorization, 'Bearer sakta-contract-secret');
+    assert.equal(req.headers.token, undefined);
+    if (route === '/v1/models') {
+      assert.equal(req.method, 'GET');
+      res.statusCode = status;
+      res.end(typeof payload === 'string' ? payload : JSON.stringify(payload));
+      return;
+    }
+    assert.equal(route, '/v1/chat/completions');
+    assert.equal(body.model, 'models/custom');
+    send(res, [{ choices: [{ delta: { content: 'Sakta 接口校验完成' } }] }]);
+  });
+  const root = base.slice(0, -3);
+  process.env.SAKTA_BASE_URL = root;
+  t.after(() => {
+    if (prior === undefined) delete process.env.SAKTA_BASE_URL;
+    else process.env.SAKTA_BASE_URL = prior;
+  });
+  const { app, cookie } = await fixture(t);
+  const models = () => app.inject({ url: '/api/sakta/models', headers: { cookie } });
+  assert.equal((await models()).statusCode, 401);
+  const login = () =>
+    app.inject({
+      method: 'POST',
+      url: '/api/auth/sakta',
+      headers: { ...headers, cookie },
+      payload: { username: 'contract-review', password: 'test-password' },
+    });
+  assert.equal((await login()).statusCode, 200);
+  for (const code of [401, 403, 429, 502, 503]) {
+    status = code;
+    payload = { error: { message: 'upstream failure sakta-contract-secret' } };
+    const response = await models();
+    assert.equal(response.statusCode, code, response.body);
+    assert.ok(!response.body.includes('sakta-contract-secret'));
+    assert.ok(!response.body.includes('"models":[]'));
+  }
+  status = 200;
+  for (const invalid of ['<html>login</html>', { code: 500, msg: 'legacy endpoint' }]) {
+    payload = invalid;
+    const response = await models();
+    assert.equal(response.statusCode, 502, response.body);
+  }
+  payload = { object: 'list', data: [] };
+  assert.deepEqual((await models()).json(), { models: [] });
+  payload = {
+    object: 'list',
+    data: [{ id: 'remote/model' }, { id: 'models/custom' }, { id: 'remote/model' }],
+  };
+  for (const suffix of ['', '/', '/v1', '/v1/', '/gateway', '/gateway/v1/']) {
+    process.env.SAKTA_BASE_URL = root + suffix;
+    assert.equal((await login()).statusCode, 200);
+    const prefix = suffix.startsWith('/gateway') ? '/gateway/v1' : '/v1';
+    assert.equal(lastPath, prefix + '/user/pub/login');
+    const response = await models();
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(lastPath, prefix + '/models');
+    assert.deepEqual(response.json(), { models: ['models/custom', 'remote/model'] });
+  }
+  const conversation = (
+    await app.inject({
+      method: 'POST',
+      url: '/api/conversations',
+      headers: { ...headers, cookie },
+      payload: { personaId: 'atlas' },
+    })
+  ).json();
+  const run = await app.inject({
+    method: 'POST',
+    url: '/api/runs',
+    headers: { ...headers, cookie },
+    payload: {
+      conversationId: conversation.id,
+      providerId: 'sakta',
+      model: 'models/custom',
+      content: '测试对话',
+    },
+  });
+  assert.equal(run.statusCode, 200);
+  assert.match(run.body, /Sakta 接口校验完成/);
+  assert.equal(lastPath, '/gateway/v1/chat/completions');
+});
+
 test('Agent completes multiple tool rounds, persists artifacts, and preserves protocol history', async (t) => {
-  const base = await mock(t, (_req, res, body) => {
-    if (body.messages.some((m: any) => m.role === 'tool'))
-      send(res, [
-        {
-          choices: [{ delta: { content: '已经完成演示文稿。' } }],
-          usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
-        },
-      ]);
-    else
+  const base = await mock(t, async (_req, res, body) => {
+    if (body.messages.some((m: any) => m.role === 'tool')) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write(
+        'data: ' + JSON.stringify({ choices: [{ delta: { content: '已经完成' } }] }) + '\n\n',
+      );
+      await new Promise((r) => setTimeout(r, 150));
+      res.end(
+        'data: ' +
+          JSON.stringify({
+            choices: [{ delta: { content: '演示文稿。' } }],
+            usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+          }) +
+          '\n\ndata: [DONE]\n\n',
+      );
+    } else
       send(res, [
         {
           choices: [
@@ -420,6 +775,12 @@ test('Agent completes multiple tool rounds, persists artifacts, and preserves pr
   assert.equal(saved.messages.length, 2);
   assert.equal(saved.messages[1].tools[0].status, 'done');
   assert.equal(saved.messages[1].usage.total, 27);
+  assert.equal(saved.messages[1].contextTokens, 18);
+  assert.equal(saved.messages[1].generation.outputTokens, 8);
+  assert.ok(saved.messages[1].generation.durationMs >= 100);
+  assert.equal(saved.messages[1].generation.estimated, false);
+  assert.equal(saved.messages[1].model, 'test');
+  assert.match(response.body, /"type":"metrics"/);
   assert.equal(saved.protocolMessages, undefined);
   const workspace = store.session(cookie.split('=')[1])!;
   assert.equal(store.artifacts(workspace).length, 1);
@@ -430,6 +791,191 @@ test('Agent completes multiple tool rounds, persists artifacts, and preserves pr
   );
   assert.equal(runs.size, 0);
 });
+
+test('shared Live2D catalog persists custom shapes, exposes them to Agents, and applies selected configuration', async (t) => {
+  const { app, cookie, settings } = await fixture(t);
+  const custom = liveModelSchema.parse({
+    id: 'my-character',
+    name: '我的原创形象',
+    description: '适合研究搭档',
+    live: {
+      modelUrl: 'https://example.com/character/model.model3.json',
+      scale: 1.25,
+      tapMotion: 'Wave',
+    },
+  });
+  settings.liveModels = [custom];
+  const save = await app.inject({
+    method: 'PUT',
+    url: '/api/settings',
+    headers: { ...headers, cookie },
+    payload: settings,
+  });
+  assert.equal(save.statusCode, 200);
+  const catalog = (await app.inject({ url: '/api/live-models', headers: { cookie } })).json();
+  assert.equal(catalog.length, builtInLiveModels.length + 1);
+  assert.equal(catalog.at(-1).id, custom.id);
+  const tools = (await app.inject({ url: '/api/tools', headers: { cookie } })).json();
+  assert.ok(tools.some((tool: any) => tool.name === 'list_live2d_models'));
+  const execute = (name: string, args: any) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/tools/execute',
+      headers: { ...headers, cookie },
+      payload: { name, args },
+    });
+  const liveListing = (await execute('list_live2d_models', {})).json();
+  assert.deepEqual(
+    {
+      ...liveListing,
+      models: liveListing.models.map(({ id, name, description }: any) => ({
+        id,
+        name,
+        description,
+      })),
+    },
+    {
+      models: catalog.map(({ id, name, description }: any) => ({ id, name, description })),
+      total: catalog.length,
+      nextOffset: null,
+    },
+  );
+  assert.equal(
+    liveListing.models.find((m: any) => m.id === 'whale').license,
+    whaleLiveModel.license,
+  );
+  const result = await execute('create_persona', {
+    name: '新搭档',
+    description: '研究伙伴',
+    systemPrompt: '帮助研究',
+    mode: 'work',
+    liveModelId: custom.id,
+  });
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(result.json().persona.live, custom.live);
+  const missing = await execute('create_persona', {
+    name: '新搭档',
+    description: '',
+    systemPrompt: '帮助研究',
+    mode: 'work',
+    liveModelId: 'invented',
+  });
+  assert.equal(missing.statusCode, 500);
+  assert.match(missing.json().error, /形象不存在/);
+  const other = await app.inject('/api/bootstrap');
+  const otherCookie = other.headers['set-cookie']!.toString().split(';')[0];
+  const otherCatalog = (
+    await app.inject({ url: '/api/live-models', headers: { cookie: otherCookie } })
+  ).json();
+  assert.equal(otherCatalog.length, builtInLiveModels.length);
+  const reserved = await app.inject({
+    method: 'PUT',
+    url: '/api/settings',
+    headers: { ...headers, cookie },
+    payload: { ...settings, liveModels: [{ ...custom, id: 'haru' }] },
+  });
+  assert.equal(reserved.statusCode, 400);
+  for (const liveModels of [[custom, custom], [{ ...custom, id: 'haru' }]]) {
+    const imported = await app.inject({
+      method: 'POST',
+      url: '/api/import',
+      headers: { ...headers, cookie },
+      payload: {
+        version: 1,
+        settings: { ...settings, liveModels },
+        conversations: [],
+        memories: [],
+        artifacts: [],
+      },
+    });
+    assert.equal(imported.statusCode, 400);
+    assert.match(imported.json().error, /形象标识/);
+  }
+  assert.equal(
+    liveModelSchema.safeParse({
+      ...custom,
+      live: { ...custom.live, modelUrl: 'javascript:alert(1)' },
+    }).success,
+    false,
+  );
+});
+test('large Live2D catalogs remain searchable and readable within Agent tool-result limits', async (t) => {
+  const { app, cookie, settings } = await fixture(t);
+  settings.liveModels = Array.from({ length: 100 }, (_, index) =>
+    liveModelSchema.parse({
+      id: `custom-${index}`,
+      name: `形象 ${index} ${'"\\\u0000'.repeat(20)}`,
+      description: `风格-${index} ${'\u0000"\\\n'.repeat(120)}`,
+      sourceUrl: 'https://example.com/source?' + 'a'.repeat(2000),
+      live: {
+        modelUrl: 'https://example.com/model.model3.json?' + 'v'.repeat(1800),
+        scale: 1.8,
+        offsetY: 0.25,
+        tapMotion: 'Wave',
+      },
+    }),
+  );
+  const save = await app.inject({
+    method: 'PUT',
+    url: '/api/settings',
+    headers: { ...headers, cookie },
+    payload: settings,
+  });
+  assert.equal(save.statusCode, 200, save.body);
+  const catalog = (await app.inject({ url: '/api/live-models', headers: { cookie } })).json();
+  assert.equal(catalog.length, builtInLiveModels.length + 100);
+  assert.ok(JSON.stringify(catalog).length > 20000);
+  const execute = (name: string, args: any) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/tools/execute',
+      headers: { ...headers, cookie },
+      payload: { name, args },
+    });
+  const ids: string[] = [];
+  let offset: number | null = 0;
+  let pages = 0;
+  while (offset !== null) {
+    const response = await execute('list_live2d_models', { offset });
+    assert.equal(response.statusCode, 200);
+    // agent.ts stores at most 20,000 characters of a serialized tool outcome.
+    const serialized = JSON.stringify(response.json());
+    assert.ok(serialized.length < 20000);
+    const page = JSON.parse(serialized.slice(0, 20000));
+    assert.equal(page.total, catalog.length);
+    assert.ok(page.models.length > 0 && page.models.length <= 20);
+    assert.ok(page.models.every((model: any) => !('live' in model)));
+    ids.push(...page.models.map((model: any) => model.id));
+    assert.ok(page.nextOffset === null || page.nextOffset > offset);
+    offset = page.nextOffset;
+    pages++;
+    assert.ok(pages <= catalog.length);
+  }
+  assert.ok(pages > Math.ceil(catalog.length / 20), 'escaped metadata must honor the size budget');
+  assert.deepEqual(
+    ids,
+    catalog.map((model: any) => model.id),
+  );
+  for (const query of ['CUSTOM-99', '形象 99', '风格-99']) {
+    const result = (await execute('list_live2d_models', { query, limit: 1 })).json();
+    assert.equal(result.total, 1);
+    assert.equal(result.models[0].id, 'custom-99');
+    assert.equal(result.nextOffset, null);
+  }
+  const beyond = (await execute('list_live2d_models', { offset: catalog.length })).json();
+  assert.deepEqual(beyond.models, []);
+  assert.equal(beyond.nextOffset, null);
+  const created = await execute('create_persona', {
+    name: '扩展目录中的伙伴',
+    description: '',
+    systemPrompt: '帮助研究',
+    mode: 'work',
+    liveModelId: 'custom-99',
+  });
+  assert.equal(created.statusCode, 200);
+  assert.deepEqual(created.json().persona.live, settings.liveModels[99].live);
+});
+
 test('manual image and music tools persist real response media; unavailable services fail clearly', async (t) => {
   const pixel =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jM1cAAAAASUVORK5CYII=';

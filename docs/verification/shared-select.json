@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-24",
+  "scope": "Replace all 13 native select controls across settings, personas, studio and the Live2D library with the shared Select component.",
+  "checks": {
+    "typecheck": "passed",
+    "webBuild": "passed",
+    "format": "passed",
+    "diffWhitespace": "passed",
+    "nativeSelectElementsInSettings": 0,
+    "consoleWarningsAndErrors": []
+  },
+  "browser": {
+    "page": "http://localhost:3416/",
+    "themes": ["light", "dark"],
+    "responsiveViewport": { "width": 390, "height": 844 },
+    "checks": [
+      "Panel opens above a trigger near the viewport bottom, outside the modal scroll clipping area.",
+      "Arrow keys and Enter update the selected value and restore trigger focus.",
+      "Home and End navigate to the first and last options.",
+      "Escape closes the list while keeping the settings dialog open.",
+      "A temporary unsaved connection with nine models supports grouped search and long labels.",
+      "An unmatched query shows the empty result state.",
+      "Tab from the search input closes the list and focuses the next form control.",
+      "At 390px width, the panel stays inside the viewport and a long model name wraps without horizontal overflow. The viewport override was reset."
+    ],
+    "proof": "../images/shared-select-dark.png"
+  },
+  "isolatedComponentFixture": {
+    "purpose": "Exercise loading and error states without using a real account or changing account settings.",
+    "checks": [
+      "Tab reaches the retry button, and Enter starts loading rather than selecting an option.",
+      "Retry keeps the list open, moves focus to search, and immediately shows a loading skeleton.",
+      "A completed retry replaces the skeleton with options.",
+      "Keyboard navigation skips a disabled option.",
+      "A disabled control remains disabled."
+    ],
+    "consoleWarningsAndErrors": []
+  },
+  "limits": ["The loading and retry fixture uses simulated options; this check does not establish real Sakta account availability."]
+}

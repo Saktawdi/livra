@@ -14,7 +14,21 @@
 
 模型列表可拉取、搜索并勾选，也可手动填写。实际的工具、图片输入、推理档位和模型权限由上游决定。Anthropic thinking 签名、Gemini thoughtSignature 与 Responses 加密推理项保留在服务端协议历史，用于后续工具轮次。
 
-Sakta 是独立的可选登录适配：账号密码通过后端发送至 Sakta 的 form 登录接口，Token 留在后端；模型使用 `/v1/models` 与 `/v1/chat/completions`。可用免费模型与额度由账号权限决定。该适配不使用 Responses。
+## 网页搜索
+
+设置 → 网页搜索中可选择 AnySearch、SearXNG 或 Tavily。AnySearch 默认使用官方 `https://api.anysearch.com/v1/search`，密钥可选；留空使用匿名额度，填写后通过服务端 Bearer 鉴权。额度或限流错误会显示提示。在人偶的工具能力中启用网页搜索后，Agent 即可调用。密钥保存在服务端，备份导出不包含密钥。
+
+AnySearch 使用 REST 接口，服务地址应填写 `/v1/search`，不是 `/mcp`。自部署 SearXNG 仍需开启 JSON 输出；Tavily 使用完整搜索接口地址和对应密钥。官方参考：[搜索接口](https://anysearch.com/docs.md/api-endpoints/v1-search)、[鉴权](https://anysearch.com/docs.md/auth)。
+
+模型列表首次拉取使用骨架屏；更新列表保留已有选项。请求失败显示原因并提供重试，不以「没有模型」代替连接状态。Sakta 目录跨页面保留，退出账号或切换账号会清空旧目录。
+
+输入区统计显示最新一轮上下文和输出 tok/s。上游报告用量时采用报告值；缺失时使用带 `≈` 的近似值。速率只统计可计时的流式轮次，排除首字等待、工具执行和小于 100ms 的样本。它与累计计费用量不同。模型连接可选填每个模型的真实上下文容量，未填写时不显示虚构上限。
+
+Sakta 是独立的可选登录适配：账号密码通过后端发送至 `POST /v1/user/pub/login`（form 编码），Token 留在后端；模型使用 `GET /v1/models` 与 `POST /v1/chat/completions`，携带 `Authorization: Bearer <Token>`。可用模型和额度由账号权限决定，不把全部账号模型标成免费。该适配不使用 Responses。接口依据 [Sakta v1 完整文档](https://api.sakta.top/docs/v1/llms-full.txt)。
+
+浏览器的 `/api/sakta/models` 是 Livra 的同源转发入口；开发时由 Vite 转发到 Livra API，再由后端访问 Sakta 的 `/v1/models`。`SAKTA_BASE_URL` 可填写服务根地址或带 `/v1` 的地址，三条接口共用同一套拼接规则，并保留部署前缀。列表校验 `data[].id`，完整保留模型 ID；HTML 登录页和旧版 `code/msg` 响应按无效上游处理，不显示成空目录。上游 401、403、429 与服务故障保留 HTTP 状态；401 提示重新登录，连接/格式错误返回 502，超时返回 504。
+
+官方 `https://api.sakta.top` 的连接兼容 TUN 代理 DNS 使用的 `198.18.0.0/15` 地址段。例外仅用于该官方 HTTPS 来源；回环、其他局域网地址和自定义服务的默认检查继续生效。2026-10-24 在本机复现了代理 DNS 被拦截后统一显示 500 的问题，修正后使用无效测试 Token 能收到真实上游 401；这只证明连通性与错误处理，不代表真实账号模型权限已验收。
 
 ## Fish Audio
 

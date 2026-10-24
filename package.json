@@ -20,7 +20,8 @@
     "format": "prettier --write \"apps/*/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/*.mjs\"",
     "format:check": "prettier --check \"apps/*/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/*.mjs\"",
     "test": "node --import tsx --test tests/*.test.ts",
-    "setup:live2d": "node scripts/setup-live2d.mjs"
+    "setup:live2d": "node scripts/setup-live2d.mjs",
+    "setup:whale": "node scripts/setup-whale.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

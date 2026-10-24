@@ -7,18 +7,24 @@ import {
   personaSchema,
   liveSchema,
   speechLanguageSchema,
+  liveModelCatalog,
+  applyMarpTheme,
+  marpThemeName,
   type Settings,
   type Persona,
   type Artifact,
   type AgentEvent,
   type ToolInfo,
 } from '@livra/shared';
+import { searchWeb } from './search.ts';
 import type { Store } from './store.ts';
+import type { LiveModelService } from './live-models.ts';
 import { network, endpoint, readJson, safeError } from './network.ts';
 import type { FunctionTool } from './providers.ts';
 
 export type Context = {
   store: Store;
+  liveModels: LiveModelService;
   workspace: string;
   settings: Settings;
   persona: Persona;
@@ -51,7 +57,9 @@ export const builtInNames = [
   'generate_music',
   'create_slides',
   'create_marp_theme',
+  'list_marp_themes',
   'create_persona',
+  'list_live2d_models',
 ];
 
 function artifact(ctx: Context, kind: Artifact['kind'], title: string, data: Artifact['data']) {
@@ -113,6 +121,8 @@ export function renderSlides(markdown: string, theme?: string) {
       throw Error('主题只能包含本地 CSS 样式');
     // Keep readable slide typography when a generated theme only changes colors or layout.
     marp.themeSet.add(`@import "default";\n${theme}`);
+    const name = marpThemeName(theme);
+    if (name) markdown = applyMarpTheme(markdown, name);
   }
   const rendered = marp.render(markdown);
   const css = rendered.css.replace(/<\/style/gi, '');
@@ -169,43 +179,27 @@ export function registry(ctx: Context): Map<string, Registered> {
     category: 'research',
     inputSchema: object({ query: text('搜索词', 500) }, ['query']),
     schema: z.object({ query: z.string().min(1).max(500) }),
-    available: !!(ctx.settings.searchUrl || process.env.SEARXNG_URL),
-    execute: async ({ query }) => {
-      const base = ctx.settings.searchUrl || process.env.SEARXNG_URL!;
-      let data;
-      if (ctx.settings.searchEngine === 'tavily')
-        data = await readJson(
-          await network(base, {
-            method: 'POST',
-            signal: ctx.signal,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ api_key: ctx.settings.searchKey, query, max_results: 6 }),
-          }),
-        );
-      else {
-        const url = new URL(endpoint(base, 'search'));
-        url.searchParams.set('q', query);
-        url.searchParams.set('format', 'json');
-        data = await readJson(await network(url.href, { signal: ctx.signal }));
-      }
-      return (data.results || []).slice(0, 6).map((r: any) => ({
-        title: r.title,
-        url: r.url,
-        content: String(r.content || r.snippet || '').slice(0, 3000),
-      }));
-    },
+    available:
+      ctx.settings.searchEngine === 'anysearch' ||
+      !!(ctx.settings.searchUrl || process.env.SEARXNG_URL),
+    execute: async ({ query }) => searchWeb(ctx.settings, query, ctx.signal),
   });
   add({
     name: 'create_slides',
     title: 'Marp 演示文稿',
     description:
-      '把完整 Marp Markdown 变为可预览、下载、打印为 PDF 的演示文稿。用 --- 分页，支持自定义 CSS 主题。',
+      '把完整 Marp Markdown 变为演示文稿。用 --- 分页。可通过 list_marp_themes 查询已保存主题并传入 themeId 复用，或提供 theme CSS。',
     category: 'create',
     inputSchema: object(
       {
         title: text('标题', 120),
         markdown: text('完整 Marp Markdown', 100000),
         theme: text('可选的 Marp 主题 CSS（含 @theme 名称）', 20000),
+        themeId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'list_marp_themes 返回的主题 ID，与 theme 二选一',
+        },
       },
       ['title', 'markdown'],
     ),
@@ -213,10 +207,51 @@ export function registry(ctx: Context): Map<string, Registered> {
       title: z.string().min(1).max(120),
       markdown: z.string().min(1).max(100000),
       theme: z.string().max(20000).optional(),
+      themeId: z.string().uuid().optional(),
     }),
-    execute: async ({ title, markdown, theme }) => {
+    execute: async ({ title, markdown, theme, themeId }) => {
+      if (theme && themeId) throw Error('theme 和 themeId 只能选择一种');
+      if (themeId) {
+        const saved = ctx.store.get<Artifact>(ctx.workspace, 'artifact', themeId);
+        if (!saved || saved.kind !== 'theme') throw Error('主题不存在或不属于当前空间');
+        theme = saved.data.css;
+      }
+      const name = theme && marpThemeName(theme);
+      if (name) markdown = applyMarpTheme(markdown, name);
       const html = renderSlides(markdown, theme);
-      return artifact(ctx, 'slides', title, { markdown, theme, html });
+      return artifact(ctx, 'slides', title, { markdown, theme, themeId, html });
+    },
+  });
+  add({
+    name: 'list_marp_themes',
+    title: '查找已保存的 Marp 主题',
+    category: 'create',
+    description:
+      '查询当前空间内可复用的演示主题。返回 ID 和 CSS 中实际的主题名称，供 create_slides.themeId 使用。',
+    inputSchema: object({
+      query: text('按名称搜索', 200),
+      offset: { type: 'integer', minimum: 0 },
+      limit: { type: 'integer', minimum: 1, maximum: 20 },
+    }),
+    schema: z.object({
+      query: z.string().max(200).default(''),
+      offset: z.number().int().min(0).default(0),
+      limit: z.number().int().min(1).max(20).default(20),
+    }),
+    execute: async ({ query, offset, limit }) => {
+      const themes = ctx.store
+        .artifacts(ctx.workspace)
+        .filter((a) => a.kind === 'theme' && a.title.toLowerCase().includes(query.toLowerCase()));
+      return {
+        themes: themes.slice(offset, offset + limit).map((a) => ({
+          id: a.id,
+          title: a.title,
+          name: marpThemeName(a.data.css),
+          created: a.created,
+        })),
+        total: themes.length,
+        nextOffset: offset + limit < themes.length ? offset + limit : null,
+      };
     },
   });
   add({
@@ -243,6 +278,67 @@ export function registry(ctx: Context): Map<string, Registered> {
       return artifact(ctx, 'theme', name, { css: theme });
     },
   });
+  const liveModelQuery = z.object({
+    query: z.string().max(200).default(''),
+    offset: z.number().int().min(0).max(10000).default(0),
+    limit: z.number().int().min(1).max(20).default(20),
+    source: z.string().max(64).default('all'),
+  });
+  add({
+    name: 'list_live2d_models',
+    title: '查找人偶形象',
+    description:
+      '创建人偶前查询官方、自有和已启用的远端 Live2D 形象。query 按名称、ID、风格、来源搜索；source 可填来源 ID、local 或 all。返回 models、total、nextOffset，远端条目附来源与使用范围；sources 列出远端加载状态。用 create_persona.liveModelId 选择，服务端会校验并应用完整配置。',
+    category: 'live',
+    inputSchema: z.toJSONSchema(liveModelQuery) as Record<string, any>,
+    schema: liveModelQuery,
+    execute: async ({ query, offset, limit, source }) => {
+      const search = query.trim().toLowerCase();
+      const catalog =
+        source === 'local'
+          ? { models: liveModelCatalog(ctx.settings), sources: [] }
+          : await ctx.liveModels.catalog(ctx.settings, ctx.workspace);
+      const matches = catalog.models.filter(
+        (m) =>
+          (source === 'all' || source === 'local' || m.sourceId === source) &&
+          [m.id, m.name, m.description, m.sourceName || ''].some((text) =>
+            text.toLowerCase().includes(search),
+          ),
+      );
+      const models: { id: string; name: string; description: string }[] = [];
+      for (const { id, name, description, sourceId, sourceName, license } of matches.slice(
+        offset,
+        offset + limit,
+      )) {
+        const item = {
+          id,
+          name,
+          description,
+          ...(sourceId ? { sourceId } : {}),
+          ...(sourceName ? { sourceName } : {}),
+          ...(license ? { license } : {}),
+        };
+        // Keep valid JSON below the Agent's tool-result budget, even for heavily
+        // escaped metadata. Configuration stays on the server until selection.
+        if (JSON.stringify([...models, item]).length > 16000) break;
+        models.push(item);
+      }
+      return {
+        models,
+        total: matches.length,
+        nextOffset: offset + models.length < matches.length ? offset + models.length : null,
+        ...(catalog.sources.length
+          ? {
+              sources: catalog.sources.map(({ id, status, error }) => ({
+                id,
+                status,
+                ...(error ? { error: error.slice(0, 160) } : {}),
+              })),
+            }
+          : {}),
+      };
+    },
+  });
   const personaInput = z.object({
     name: z.string().min(1).max(50),
     description: z.string().max(1500),
@@ -258,28 +354,36 @@ export function registry(ctx: Context): Map<string, Registered> {
       .optional(),
     tools: z.array(z.string().max(64)).max(50).optional(),
     live: liveSchema.partial().optional(),
+    liveModelId: z.string().max(80).optional(),
   });
   add({
     name: 'create_persona',
     title: '创造新伙伴',
     description:
-      '生成人偶卡作品，用户预览后安装。可设计人格、语言、音色、工具和 Live2D 参数。内置模型 /models/hiyori/Hiyori.model3.json 与 /models/haru/Haru.model3.json；不会生成新的 Live2D 模型文件。',
+      '生成人偶卡作品，用户预览后安装。先用 list_live2d_models 查找匹配的形象，通过 liveModelId 选用。可设计人格、语言、音色、工具和 Live2D 参数，也可提供自有模型的 live.modelUrl。',
     category: 'live',
     inputSchema: z.toJSONSchema(personaInput) as Record<string, any>,
     schema: personaInput,
     execute: async (args) => {
+      const shape = args.liveModelId
+        ? await ctx.liveModels.resolve(ctx.settings, ctx.workspace, args.liveModelId, ctx.signal)
+        : undefined;
+      if (args.liveModelId && !shape) throw Error('形象不存在，请调用 list_live2d_models 重新选择');
       const persona = personaSchema.parse({
         ...ctx.persona,
         ...args,
         id: randomUUID(),
         subtitle: args.description.slice(0, 60),
         greeting: args.greeting || `你好，我是${args.name}。`,
-        live: { ...ctx.persona.live, ...args.live },
+        live: { ...(shape?.live || ctx.persona.live), ...args.live },
         tools:
           args.tools ||
           (args.mode === 'work' ? builtInNames : ['set_emotion', 'remember', 'list_tools']),
       });
-      return artifact(ctx, 'persona', persona.name, { persona });
+      return artifact(ctx, 'persona', persona.name, {
+        persona,
+        ...(shape ? { liveModel: shape } : {}),
+      });
     },
   });
   const imageProvider = ctx.settings.providers.find(
@@ -483,7 +587,10 @@ export function registry(ctx: Context): Map<string, Registered> {
   return map;
 }
 const allowed = (ctx: Context, name: string) =>
-  name === 'list_tools' || ctx.persona.tools.includes(name);
+  name === 'list_tools' ||
+  (name === 'list_live2d_models' && ctx.persona.tools.includes('create_persona')) ||
+  (name === 'list_marp_themes' && ctx.persona.tools.includes('create_slides')) ||
+  ctx.persona.tools.includes(name);
 export function toolList(ctx: Context): ToolInfo[] {
   return [...registry(ctx).values()].map(({ execute, schema, approval, ...t }) => t);
 }

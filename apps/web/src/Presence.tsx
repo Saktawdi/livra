@@ -17,6 +17,8 @@ import {
   CircleCheck,
   CircleAlert,
   Layers,
+  Sparkles,
+  MoveUpRight,
 } from 'lucide-react';
 import type { Conversation, LiveState, Memory, Mood, Persona, Settings } from '@livra/shared';
 import { useFocus } from './useFocus';
@@ -37,6 +39,8 @@ export function Presence({
   onArtifact,
   notify,
   saveSettings,
+  paused = false,
+  onDetach,
 }: {
   settings: Settings;
   persona: Persona;
@@ -49,6 +53,8 @@ export function Presence({
   onArtifact: (id: string) => void;
   notify: Notify;
   saveSettings: (s: Settings) => Promise<Settings>;
+  paused?: boolean;
+  onDetach?: () => void;
 }) {
   const [choosing, setChoosing] = useState(false),
     [tab, setTab] = useState('activity'),
@@ -57,6 +63,14 @@ export function Presence({
     [memoryOpen, setMemoryOpen] = useState(false),
     [memories, setMemories] = useState<Memory[]>([]),
     [memory, setMemory] = useState('');
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [gesture, setGesture] = useState({ id: 0, key: 'reset' });
+  const working = ['thinking', 'working'].includes(state);
+  useEffect(() => {
+    if (gesture.key === 'reset') return;
+    const timer = setTimeout(() => setGesture({ id: Date.now(), key: 'reset' }), 4500);
+    return () => clearTimeout(timer);
+  }, [gesture]);
   const { remaining, timerOn, timerVisible, start, toggle, end } = useFocus(notify);
   useEffect(() => {
     if (!localMood) return;
@@ -68,6 +82,8 @@ export function Presence({
   }, [localMood, greeting]);
   const tools = conversation?.messages.flatMap((m) => m.tools || []) || [];
   const artifacts = tools.map((t) => t.result as any).filter((r) => r?.artifactId);
+  const activity = tools.findLast((t) => t.status === 'running')?.name;
+  const lastReply = conversation?.messages.at(-1);
   const work = persona.mode === 'work';
   const status =
     state === 'thinking'
@@ -82,7 +98,9 @@ export function Presence({
               ? '需要检查'
               : '在这里';
   function wave() {
+    if (working) return;
     setLocalMood(localMood === 'happy' ? 'excited' : 'happy');
+    setGesture({ id: Date.now(), key: 'greet' });
     setGreeting(true);
   }
   async function openMemory() {
@@ -137,7 +155,16 @@ export function Presence({
           audioLevel={audioLevel}
           reducedMotion={settings.reducedMotion}
           compact={work}
+          paused={paused}
           onTap={wave}
+          activity={activity}
+          gesture={gesture}
+          completed={
+            lastReply?.role === 'assistant' &&
+            !!lastReply.content &&
+            !lastReply.error &&
+            !lastReply.interrupted
+          }
         />
         {greeting && (
           <div className="presence-bubble" role="status">
@@ -163,7 +190,7 @@ export function Presence({
         )}
       </div>
       <div className="presence-actions">
-        <button onClick={wave}>
+        <button onClick={wave} disabled={working}>
           <Hand size={17} />
           打个招呼
         </button>
@@ -171,7 +198,47 @@ export function Presence({
           <Timer size={17} />
           专注 25 分钟
         </button>
+        <button onClick={() => setActionsOpen((v) => !v)} aria-expanded={actionsOpen}>
+          <Sparkles size={17} />
+          互动
+        </button>
+        {onDetach && (
+          <button onClick={onDetach}>
+            <MoveUpRight size={17} />
+            随行
+          </button>
+        )}
       </div>
+      {actionsOpen && (
+        <div className="companion-reactions" aria-label="人偶互动">
+          {Object.entries(persona.live.reactions)
+            .filter(([, r]) => r.label)
+            .map(([key, r]) => (
+              <button
+                key={key}
+                disabled={working}
+                onClick={() => setGesture({ id: Date.now(), key })}
+              >
+                {r.label}
+              </button>
+            ))}
+          {!Object.values(persona.live.reactions).some((r) => r.label) && (
+            <button disabled={working} onClick={wave}>
+              打个招呼
+            </button>
+          )}
+          <button
+            disabled={working}
+            onClick={() => {
+              setLocalMood(null);
+              setGesture({ id: Date.now(), key: 'reset' });
+            }}
+          >
+            恢复表情
+          </button>
+          {working && <small>正在执行任务，完成后再互动</small>}
+        </div>
+      )}
       {work && (
         <div className="execution-dock">
           <div className="dock-tabs">
@@ -210,6 +277,7 @@ export function Presence({
                           remember: '保存记忆',
                           create_marp_theme: '设计主题',
                           create_persona: '设计人偶',
+                          list_live2d_models: '查找人偶形象',
                           generate_music: '生成音乐',
                           list_tools: '检查可用工具',
                         } as any

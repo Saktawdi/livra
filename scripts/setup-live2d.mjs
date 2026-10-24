@@ -1,6 +1,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-for (const name of ['Haru', 'Hiyori']) {
+const names = process.argv.slice(2);
+for (const name of (names.length ? names : ['Haru', 'Hiyori', 'Mark', 'Natori', 'Rice']).filter(
+  (name) => name !== 'Whale',
+)) {
+  if (!['Haru', 'Hiyori', 'Mark', 'Natori', 'Rice'].includes(name))
+    throw Error('Unknown official sample: ' + name);
   const root = resolve(import.meta.dirname, '../apps/web/public/models', name.toLowerCase());
   const base = `https://raw.githubusercontent.com/Live2D/CubismWebSamples/4-r.1/Samples/Resources/${name}/`;
   const model = await (await fetch(base + name + '.model3.json')).json();
@@ -13,6 +18,7 @@ for (const name of ['Haru', 'Hiyori']) {
       refs.Pose,
       refs.Physics,
       refs.UserData,
+      refs.DisplayInfo,
       ...(refs.Expressions || []).map((e) => e.File),
       ...Object.values(refs.Motions)
         .flat()
@@ -35,3 +41,4 @@ for (const name of ['Haru', 'Hiyori']) {
   );
   console.log(`Installed ${files.size} official ${name} sample files locally.`);
 }
+if (!names.length || names.includes('Whale')) await import('./setup-whale.mjs');

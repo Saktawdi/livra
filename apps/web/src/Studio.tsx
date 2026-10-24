@@ -16,8 +16,9 @@ import {
   Maximize2,
 } from 'lucide-react';
 import type { Artifact, Settings } from '@livra/shared';
+import { applyMarpTheme, marpThemeName } from '@livra/shared';
 import { api, post, download, readAttachment } from './api';
-import { PageIntro, Field, Button, IconButton, Badge, Modal } from './ui';
+import { PageIntro, Field, Button, IconButton, Badge, Modal, Select } from './ui';
 import type { Notify } from './App';
 import { useSessionState } from './useSessionState';
 
@@ -31,12 +32,16 @@ export function Studio({
   onCreated,
   onAgent,
   notify,
+  requestedThemeId,
+  onThemeUsed,
 }: {
   settings: Settings;
   onSettings: () => void;
   onCreated: () => void;
   onAgent: (p: string) => void;
   notify: Notify;
+  requestedThemeId: string;
+  onThemeUsed: () => void;
 }) {
   const [tab, setTab] = useSessionState('tab', 'image'),
     [prompt, setPrompt] = useSessionState('prompt', ''),
@@ -66,23 +71,23 @@ export function Studio({
     .filter((p) => p.kind === kind)
     .flatMap((p) => p.models.map((m) => ({ id: p.id, model: m, name: p.name })));
   useEffect(() => {
-    if (tab === 'slides')
+    if (tab === 'slides' || requestedThemeId)
       api<Artifact[]>('/artifacts')
         .then((items) => setThemes(items.filter((a) => a.kind === 'theme')))
         .catch((e) => notify(e.message, 'error'));
-  }, [tab]);
+  }, [tab, requestedThemeId]);
   function chooseTheme(id: string) {
     setThemeId(id);
-    const name = themes.find((t) => t.id === id)?.title || 'default';
-    setMarkdown((m) => {
-      const front = /^---\r?\n[\s\S]*?\r?\n---/.exec(m);
-      if (!front) return `---\ntheme: ${name}\n---\n\n${m}`;
-      const updated = /^theme:.*$/m.test(front[0])
-        ? front[0].replace(/^theme:.*$/m, 'theme: ' + name)
-        : front[0].replace(/\r?\n---$/, '\ntheme: ' + name + '\n---');
-      return updated + m.slice(front[0].length);
-    });
+    const css = themes.find((t) => t.id === id)?.data.css;
+    const name = css ? marpThemeName(css) || 'default' : 'default';
+    setMarkdown((m) => applyMarpTheme(m, name));
   }
+  useEffect(() => {
+    if (!requestedThemeId || !themes.some((t) => t.id === requestedThemeId)) return;
+    setTab('slides');
+    chooseTheme(requestedThemeId);
+    onThemeUsed();
+  }, [requestedThemeId, themes]);
   useEffect(() => {
     setResult(null);
     setError('');
@@ -153,7 +158,7 @@ export function Studio({
         args = { name: themeName, css: theme };
       } else {
         name = 'create_slides';
-        args = { title, markdown, ...(appliedTheme ? { theme: appliedTheme } : {}) };
+        args = { title, markdown, ...(themeId ? { themeId } : {}) };
       }
       const [providerId, ...model] = selection.split('|');
       const data = await post(
@@ -165,6 +170,8 @@ export function Studio({
         signal: abort.signal,
       });
       setResult(artifact);
+      if (artifact.kind === 'theme')
+        setThemes((items) => [artifact, ...items.filter((t) => t.id !== artifact.id)]);
       onCreated();
       notify('作品已保存');
     } catch (e) {
@@ -305,14 +312,19 @@ export function Studio({
                 </>
               )}
               <Field label={tab === 'image' ? '图像模型' : '音乐模型'}>
-                <select value={selection} onChange={(e) => setSelection(e.target.value)}>
-                  <option value="">选择已连接的模型</option>
-                  {options.map((o) => (
-                    <option key={o.id + o.model} value={o.id + '|' + o.model}>
-                      {o.name} · {o.model}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  value={selection}
+                  onChange={setSelection}
+                  searchable
+                  options={[
+                    { value: '', label: '选择已连接的模型' },
+                    ...options.map((o) => ({
+                      value: o.id + '|' + o.model,
+                      label: o.model,
+                      group: o.name,
+                    })),
+                  ]}
+                />
               </Field>
               {!options.length && (
                 <button className="text-link" onClick={onSettings}>
@@ -329,14 +341,14 @@ export function Studio({
                     <input value={title} onChange={(e) => setTitle(e.target.value)} />
                   </Field>
                   <Field label="主题">
-                    <select value={themeId} onChange={(e) => chooseTheme(e.target.value)}>
-                      <option value="">默认</option>
-                      {themes.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.title}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      value={themeId}
+                      onChange={chooseTheme}
+                      options={[
+                        { value: '', label: '默认' },
+                        ...themes.map((t) => ({ value: t.id, label: t.title })),
+                      ]}
+                    />
                   </Field>
                   <Field label="Marp Markdown">
                     <textarea

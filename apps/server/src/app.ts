@@ -13,16 +13,20 @@ import {
   providerSchema,
   personaSchema,
   speechLanguageSchema,
+  liveModelCatalog,
   type Artifact,
   type Conversation,
   type AgentEvent,
 } from '@livra/shared';
 import { Store } from './store.ts';
-import { endpoint, network, readJson, safeError } from './network.ts';
+import { readJson, safeError } from './network.ts';
 import { listModels } from './providers.ts';
 import { toolList, executeTool, renderSlides, builtInNames, type Context } from './tools.ts';
 import { resolveProvider, runAgent, runs, type Run } from './agent.ts';
 import { synthesize } from './speech.ts';
+import { listSaktaModels, saktaRequest } from './sakta.ts';
+import { LiveModelService } from './live-models.ts';
+import type { network } from './network.ts';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -30,7 +34,12 @@ declare module 'fastify' {
   }
 }
 export async function createApp(
-  options: { directory?: string; logger?: boolean; staticRoot?: string } = {},
+  options: {
+    directory?: string;
+    logger?: boolean;
+    staticRoot?: string;
+    liveModelFetch?: typeof network;
+  } = {},
 ) {
   const app = Fastify({
     logger: options.logger ?? false,
@@ -45,6 +54,7 @@ export async function createApp(
     options.directory ||
       resolve(process.env.DATA_DIR || resolve(import.meta.dirname, '../../../.data')),
   );
+  const liveModels = new LiveModelService(store, options.liveModelFetch);
   app.decorateRequest('workspace', '');
   await app.register(cookie);
   await app.register(rateLimit, { max: 240, timeWindow: '1 minute' });
@@ -121,7 +131,7 @@ export async function createApp(
     emit: (event: AgentEvent) => void = () => {},
   ): Context => {
     const settings = store.settings(workspace);
-    return { store, workspace, settings, persona: settings.personas[0], signal, emit };
+    return { store, workspace, settings, persona: settings.personas[0], signal, emit, liveModels };
   };
   app.get('/api/health', async () => ({ ok: true, name: 'Livra', version: '1.0.0' }));
   app.post(
@@ -154,8 +164,7 @@ export async function createApp(
     version: '1.0.0',
   }));
   app.put('/api/settings', async (req) => {
-    if ([...runs.values()].some((r) => r.workspace === req.workspace))
-      throw Object.assign(Error('请等待或停止当前 Agent 后再保存设置'), { statusCode: 409 });
+    // Runs keep their own settings snapshot; preferences apply to subsequent runs.
     const previous = store.settings(req.workspace);
     const settings = settingsSchema.parse(req.body);
     if (
@@ -199,10 +208,23 @@ export async function createApp(
       throw Error(safeError(error, [provider.apiKey]));
     }
   });
+  app.get('/api/live-models', async (req) => liveModelCatalog(store.settings(req.workspace)));
+  app.get('/api/live-models/catalog', async (req) =>
+    liveModels.catalog(store.settings(req.workspace), req.workspace),
+  );
+  app.get('/api/live-models/sources/:id', async (req) => {
+    const { id } = z.object({ id: z.string().max(48) }).parse(req.params);
+    const { refresh } = z.object({ refresh: z.enum(['0', '1']).default('0') }).parse(req.query);
+    return liveModels.source(store.settings(req.workspace), req.workspace, id, refresh === '1');
+  });
+  app.post('/api/live-models/resolve', async (req) => {
+    const { id } = z.object({ id: z.string().min(1).max(80) }).parse(req.body);
+    return liveModels.resolve(store.settings(req.workspace), req.workspace, id);
+  });
   app.get('/api/sakta/models', async (req) => {
     const provider = resolveProvider(store.settings(req.workspace), 'sakta');
     if (!provider) throw Object.assign(Error('请先登录 Sakta'), { statusCode: 401 });
-    return { models: await listModels(provider) };
+    return { models: await listSaktaModels(provider.apiKey!) };
   });
   app.post(
     '/api/auth/sakta',
@@ -214,14 +236,11 @@ export async function createApp(
         .object({ username: z.string().min(1).max(200), password: z.string().min(1).max(500) })
         .parse(req.body);
       const response = await readJson(
-        await network(
-          endpoint(process.env.SAKTA_BASE_URL || 'https://api.sakta.top', 'v1/user/pub/login'),
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ username, password }).toString(),
-          },
-        ),
+        await saktaRequest('user/pub/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ username, password }).toString(),
+        }),
       );
       if (response.code !== 0 || !response.token)
         throw Object.assign(Error(response.msg || '登录失败'), { statusCode: 401 });
@@ -544,8 +563,14 @@ export async function createApp(
       input.conversationId,
     );
     if (!conversation) throw Object.assign(Error('对话不存在'), { statusCode: 404 });
-    if ([...runs.values()].some((r) => r.workspace === req.workspace))
-      throw Object.assign(Error('已有任务正在执行，请先停止或等待完成'), { statusCode: 409 });
+    if (
+      [...runs.values()].some(
+        (r) => r.workspace === req.workspace && r.conversationId === conversation.id,
+      )
+    )
+      throw Object.assign(Error('这段对话已有任务正在执行，可以在其他对话继续工作'), {
+        statusCode: 409,
+      });
     ctx.persona =
       ctx.settings.personas.find((p) => p.id === conversation.personaId) ||
       ctx.settings.personas[0];

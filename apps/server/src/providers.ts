@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { fishModels, type Provider, type WireMessage, type Usage } from '@livra/shared';
 import { endpoint, network, readJson } from './network.ts';
+import { saktaRequest } from './sakta.ts';
 
 export type FunctionTool = {
   type: 'function';
@@ -11,6 +12,7 @@ export type Completion = {
   reasoning: string;
   calls: { id: string; type: 'function'; function: { name: string; arguments: string } }[];
   usage?: Usage;
+  streamDurationMs?: number;
   native?: { protocol: string; content: any[] };
 };
 export async function* sse(response: Response): AsyncGenerator<any> {
@@ -269,17 +271,22 @@ export async function complete(
         },
       ];
   }
-  const response = await network(endpoint(provider.baseUrl, path), {
+  const request: RequestInit = {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
     signal,
-  });
+  };
+  const response = await (provider.id === 'sakta'
+    ? saktaRequest(path, request)
+    : network(endpoint(provider.baseUrl, path), request));
   if (!response.ok) await readJson(response);
   const result: Completion = { content: '', reasoning: '', calls: [] };
   const calls = new Map<number, Completion['calls'][number]>();
   const nativeBlocks = new Map<number, any>();
   const nativeParts: any[] = [];
+  let firstActivity = 0,
+    lastActivity = 0;
   const output = (type: 'delta' | 'reasoning', text: unknown) => {
     if (typeof text !== 'string' || !text) return;
     result[type === 'delta' ? 'content' : 'reasoning'] += text;
@@ -287,6 +294,21 @@ export async function complete(
   };
   for await (const chunk of sse(response)) {
     if (signal.aborted) throw signal.reason;
+    const delta = chunk.choices?.[0]?.delta;
+    const activity =
+      delta?.content ||
+      delta?.reasoning_content ||
+      delta?.reasoning ||
+      delta?.tool_calls?.length ||
+      /(?:output_text|reasoning_summary_text|function_call_arguments)\.delta$/.test(
+        chunk.type || '',
+      ) ||
+      chunk.type === 'content_block_delta' ||
+      chunk.candidates?.[0]?.content?.parts?.length;
+    if (activity) {
+      lastActivity = performance.now();
+      firstActivity ||= lastActivity;
+    }
     if (provider.protocol === 'openai') {
       const delta = chunk.choices?.[0]?.delta;
       output('delta', delta?.content);
@@ -399,6 +421,7 @@ export async function complete(
     id: c.id || randomUUID(),
     function: { ...c.function, arguments: c.function.arguments || '{}' },
   }));
+  result.streamDurationMs = firstActivity ? Math.max(0, lastActivity - firstActivity) : 0;
   if (provider.protocol === 'anthropic' && nativeBlocks.size) {
     for (const [index, block] of nativeBlocks)
       if (block.type === 'tool_use')

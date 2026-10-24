@@ -31,6 +31,10 @@ export function LiveAvatar({
   compact = false,
   audioLevel,
   paused = false,
+  onStatus,
+  activity,
+  gesture,
+  completed = false,
 }: {
   persona: Persona;
   state?: LiveState;
@@ -40,6 +44,10 @@ export function LiveAvatar({
   compact?: boolean;
   audioLevel?: { current: number | undefined };
   paused?: boolean;
+  onStatus?: (status: string) => void;
+  activity?: string;
+  gesture?: { id: number; key: string };
+  completed?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null),
     modelRef = useRef<any>(null),
@@ -48,6 +56,9 @@ export function LiveAvatar({
   stateRef.current = { state, mood, reducedMotion, persona, audioLevel, onTap, compact };
   const [status, setStatus] = useState('loading'),
     [retry, setRetry] = useState(0);
+  useEffect(() => {
+    onStatus?.(status);
+  }, [status, onStatus]);
   const appRef = useRef<any>(null),
     pausedRef = useRef(paused);
   pausedRef.current = paused;
@@ -63,28 +74,51 @@ export function LiveAvatar({
         return;
       }
       await loadScript(persona.live.coreUrl);
+      await loadScript('/vendor/live2d.min.js');
       if (disposed) return;
       const PIXI = await import('pixi.js');
       if (!(window as any).PIXI?.live2d) (window as any).PIXI = { ...PIXI };
-      await loadScript('/vendor/pixi-live2d-display-0.4.0.min.js');
+      await loadScript('/vendor/pixi-live2d-display-all-0.4.0.min.js');
       const { Live2DModel } = (window as any).PIXI.live2d;
-      if (disposed) return;
+      const container = host.current;
+      if (disposed || !container?.isConnected) return;
       app = new PIXI.Application({
         backgroundAlpha: 0,
         antialias: true,
         autoDensity: true,
         resolution: Math.min(window.devicePixelRatio || 1, 2),
-        resizeTo: host.current!,
+        resizeTo: container,
       });
       appRef.current = app;
       app.ticker.maxFPS = 30;
-      host.current!.appendChild(app.view as HTMLCanvasElement);
-      model = await Live2DModel.from(persona.live.modelUrl, {
+      container.appendChild(app.view as HTMLCanvasElement);
+      const loadingModel = Live2DModel.from(persona.live.modelUrl, {
         autoInteract: false,
         idleMotionGroup: persona.live.idleMotion,
         motionPreload: 'IDLE' as any,
       });
-      if (disposed) {
+      let expired = false;
+      void loadingModel.then(
+        (loaded: any) => {
+          if (expired) loaded.destroy();
+        },
+        () => {},
+      );
+      let timeout: ReturnType<typeof setTimeout>;
+      try {
+        model = await Promise.race([
+          loadingModel,
+          new Promise((_, reject) => {
+            timeout = setTimeout(() => {
+              expired = true;
+              reject(Error('人偶资源加载超时，请重试'));
+            }, 30000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout!);
+      }
+      if (disposed || host.current !== container || !container.isConnected) {
         model.destroy();
         return;
       }
@@ -106,7 +140,7 @@ export function LiveAvatar({
           (crop ? 1.75 : 1);
         model.scale.set(scale);
         model.position.set(
-          width * 0.5,
+          width * (0.5 + live.offsetX),
           crop
             ? height * (0.03 + live.offsetY) + model.internalModel.height * scale
             : height * (0.99 + live.offsetY),
@@ -119,31 +153,47 @@ export function LiveAvatar({
       fitRef.current = fit;
       fit();
       observer = new ResizeObserver(fit);
-      observer.observe(host.current!);
+      observer.observe(container);
       model.internalModel.on('beforeModelUpdate', () => {
         const s = stateRef.current;
         const core = model.internalModel.coreModel;
+        const parameter = (name: string, value: number) => {
+          if (core.setParameterValueById) core.setParameterValueById(name, value);
+          else
+            core.setParamFloat?.(
+              name
+                .replace(/^Param/, 'PARAM_')
+                .replace(/([A-Z])([A-Z][a-z])/g, '$1_$2')
+                .replace(/([a-z])([A-Z])/g, '$1_$2')
+                .toUpperCase(),
+              value,
+            );
+        };
         const mouth =
           s.state === 'speaking'
             ? (s.audioLevel?.current ??
               0.18 + Math.max(0, Math.sin(performance.now() * 0.023)) * 0.55)
             : 0;
-        core.setParameterValueById?.('ParamMouthOpenY', mouth);
+        parameter('ParamMouthOpenY', mouth);
         if (!s.persona.live.expressions[s.mood]) {
-          core.setParameterValueById?.(
+          parameter(
             'ParamMouthForm',
             s.mood === 'happy' || s.mood === 'excited' ? 0.65 : s.mood === 'concerned' ? -0.25 : 0,
           );
-          if (s.mood === 'thinking') core.setParameterValueById?.('ParamAngleZ', 6);
+          if (s.mood === 'thinking') parameter('ParamAngleZ', 6);
           if (s.mood === 'happy' || s.mood === 'excited') {
-            core.setParameterValueById?.('ParamEyeLSmile', 0.4);
-            core.setParameterValueById?.('ParamEyeRSmile', 0.4);
+            parameter('ParamEyeLSmile', 0.4);
+            parameter('ParamEyeRSmile', 0.4);
           }
         }
       });
       model.on('hit', () => {
+        if (
+          ['thinking', 'working'].includes(stateRef.current.state) ||
+          stateRef.current.reducedMotion
+        )
+          return;
         model.motion(stateRef.current.persona.live.tapMotion).catch(() => {});
-        stateRef.current.onTap?.();
       });
       model.update(16);
       app.render();
@@ -152,6 +202,7 @@ export function LiveAvatar({
     setup().catch((error) => {
       if (!disposed) {
         console.warn('Live2D:', error.message);
+        app?.stop();
         setStatus('error');
       }
     });
@@ -165,16 +216,38 @@ export function LiveAvatar({
       if (app) app.destroy(true, { children: true, texture: false, baseTexture: false });
     };
   }, [persona.live.modelUrl, persona.live.coreUrl, retry]);
+  const previousState = useRef(state);
   useEffect(() => {
     const model = modelRef.current;
     if (!model) return;
-    const expression = persona.live.expressions[mood];
+    const wasWorking = ['thinking', 'working'].includes(previousState.current);
+    previousState.current = state;
+    const working = ['thinking', 'working', 'error'].includes(state);
+    const reaction = working
+      ? persona.live.reactions[activity || state] || persona.live.reactions[state]
+      : state === 'idle' && wasWorking && completed
+        ? persona.live.reactions.celebrate
+        : gesture && gesture.key !== 'reset'
+          ? persona.live.reactions[gesture.key]
+          : undefined;
+    const expression = reaction?.expression || persona.live.expressions[mood];
     if (expression) model.expression(expression).catch(() => {});
     else model.internalModel.motionManager.expressionManager?.resetExpression?.();
-  }, [mood, status, persona.live.expressions]);
+    if (reaction?.motion && !reducedMotion) model.motion(reaction.motion).catch(() => {});
+  }, [
+    mood,
+    state,
+    activity,
+    gesture?.id,
+    status,
+    persona.live.expressions,
+    persona.live.reactions,
+    reducedMotion,
+    completed,
+  ]);
   useEffect(() => {
     fitRef.current?.();
-  }, [persona.live.scale, persona.live.offsetY, compact]);
+  }, [persona.live.scale, persona.live.offsetX, persona.live.offsetY, compact]);
   useEffect(() => {
     let frame = 0;
     const apply = () => {
@@ -214,8 +287,15 @@ export function LiveAvatar({
       <div
         className="live-canvas"
         ref={host}
-        role="img"
-        aria-label={`${persona.name} Live2D 人偶`}
+        role={onTap ? 'button' : 'img'}
+        tabIndex={onTap ? 0 : undefined}
+        aria-label={onTap ? `与${persona.name}互动` : `${persona.name} Live2D 人偶`}
+        onKeyDown={(e) => {
+          if (onTap && ['Enter', ' '].includes(e.key)) {
+            e.preventDefault();
+            if (!['thinking', 'working'].includes(state)) onTap();
+          }
+        }}
         onPointerMove={(e) => {
           if (!persona.live.followCursor || reducedMotion) return;
           modelRef.current?.focus(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
@@ -224,10 +304,12 @@ export function LiveAvatar({
           modelRef.current?.internalModel.focusController?.focus(0, 0);
         }}
         onClick={(e) => {
+          if (['thinking', 'working'].includes(state)) return;
           if (modelRef.current) {
             const rect = e.currentTarget.getBoundingClientRect();
             modelRef.current.tap(e.clientX - rect.left, e.clientY - rect.top);
           }
+          onTap?.();
         }}
       />
       {status !== 'ready' && (

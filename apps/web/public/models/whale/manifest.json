@@ -1,0 +1,1013 @@
+{
+  "version": 1,
+  "model": "c_0120",
+  "displayName": "DS 鲸鱼娘",
+  "url": "c_0120.model3.json",
+  "source": "DS鲸鱼娘（B站@氵六青），VTube Studio 模型",
+  "motions": {
+    "idle": {
+      "group": "idle",
+      "file": "idle.motion3.json",
+      "label": "待机（猫爪）",
+      "loop": true,
+      "ambient": true,
+      "params": [
+        "Param73",
+        "Param74",
+        "Param75",
+        "Param76",
+        "maoshou2",
+        "maoshou3",
+        "maoshou4",
+        "maoshou5",
+        "maoshou6",
+        "maoshou7",
+        "j2",
+        "j3",
+        "j4",
+        "j5",
+        "j6",
+        "j7",
+        "j8",
+        "j8_1",
+        "j9",
+        "j10",
+        "j11",
+        "j12",
+        "j13",
+        "j14",
+        "j15",
+        "j16",
+        "j17",
+        "j18",
+        "j19",
+        "j20",
+        "j21",
+        "j22",
+        "j23",
+        "j24",
+        "j25",
+        "j26",
+        "j27",
+        "j28",
+        "j29",
+        "j30",
+        "j31",
+        "j32",
+        "j34",
+        "j35",
+        "j36",
+        "j37",
+        "j38",
+        "j39",
+        "j41",
+        "j40",
+        "j42",
+        "j43",
+        "j44",
+        "j45",
+        "j46",
+        "j47",
+        "j48",
+        "j49",
+        "j50",
+        "j51",
+        "j52",
+        "j53",
+        "j54",
+        "j55",
+        "j56",
+        "j57",
+        "ParamBreath4",
+        "ParamBreath3",
+        "Param_Angle_Rotation_1_xk4",
+        "Param_Angle_Rotation_2_xk4",
+        "Param_Angle_Rotation_3_xk4",
+        "Param_Angle_Rotation_4_xk4",
+        "Param_Angle_Rotation_5_xk4",
+        "Param_Angle_Rotation_6_xk4",
+        "Param_Angle_Rotation_7_xk4",
+        "paopao",
+        "paopao2",
+        "paopao3",
+        "paopao4",
+        "paopao5",
+        "Param77",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "ParamCheek28",
+        "ParamCheek36"
+      ],
+      "duration": 4
+    },
+    "aidale": {
+      "group": "aidale",
+      "file": "_aidale.motion3.json",
+      "label": "伸展（aidale）",
+      "loop": false,
+      "params": [
+        "ParamCheek20",
+        "ParamCheek27",
+        "ParamCheek76",
+        "ParamCheek77",
+        "ParamCheek75",
+        "ParamAngleX",
+        "ParamAngleY",
+        "ParamAngleZ",
+        "Param",
+        "ParamBodyAngleX",
+        "ParamBodyAngleY",
+        "ParamBodyAngleZ",
+        "Param14",
+        "Param13",
+        "ParamEyeLOpen",
+        "ParamEyeROpen",
+        "ParamEyeBallX",
+        "ParamEyeBallY",
+        "ParamBrowLX",
+        "ParamBrowLY",
+        "ParamBrowLAngle",
+        "ParamBrowLForm",
+        "ParamBrowRX",
+        "ParamBrowRY",
+        "ParamBrowRAngle",
+        "ParamBrowRForm",
+        "ParamMouthForm",
+        "ParamMouthOpenY",
+        "Param71",
+        "Param72",
+        "Param73",
+        "Param74",
+        "Param75",
+        "Param76",
+        "Param77",
+        "Param70"
+      ],
+      "duration": 4.767
+    },
+    "selfie": {
+      "group": "selfie",
+      "file": "自拍.motion3.json",
+      "label": "自拍",
+      "loop": false,
+      "params": [
+        "ParamAngleX",
+        "ParamAngleY",
+        "ParamAngleZ",
+        "ParamBodyAngleX",
+        "ParamBodyAngleY",
+        "ParamBodyAngleZ",
+        "ParamEyeLOpen",
+        "ParamEyeROpen",
+        "ParamEyeBallX",
+        "ParamEyeBallY",
+        "ParamBrowLX",
+        "ParamBrowLY",
+        "ParamBrowLAngle",
+        "ParamBrowLForm",
+        "ParamBrowRX",
+        "ParamBrowRY",
+        "ParamBrowRAngle",
+        "ParamBrowRForm",
+        "ParamMouthForm",
+        "ParamMouthOpenY",
+        "phone",
+        "phone4",
+        "phone6",
+        "phone3",
+        "phone5"
+      ],
+      "duration": 3.3
+    },
+    "selfieQuick": {
+      "group": "selfieQuick",
+      "file": "自拍简单.motion3.json",
+      "label": "快速自拍",
+      "loop": false,
+      "params": [
+        "phone",
+        "phone3"
+      ],
+      "duration": 1.267
+    },
+    "ketchup": {
+      "group": "ketchup",
+      "file": "番茄酱.motion3.json",
+      "label": "挤番茄酱",
+      "loop": false,
+      "params": [
+        "ParamCheek21",
+        "ParamAngleX",
+        "ParamAngleY",
+        "ParamAngleZ",
+        "ParamEyeLOpen",
+        "ParamEyeROpen",
+        "ParamMouthForm",
+        "ParamMouthOpenY",
+        "keyboard",
+        "point",
+        "xbox",
+        "danbaofan",
+        "danbaoX",
+        "danbaoY",
+        "danbaoz",
+        "ji",
+        "aixing",
+        "Param9"
+      ],
+      "duration": 5
+    },
+    "openLid": {
+      "group": "openLid",
+      "file": "开盖.motion3.json",
+      "label": "开盖",
+      "loop": false,
+      "params": [
+        "pointZ2",
+        "phone",
+        "phone4",
+        "phone6",
+        "phone2"
+      ],
+      "duration": 1
+    },
+    "bubble": {
+      "group": "bubble",
+      "file": "chuipaopao.motion3.json",
+      "label": "吹泡泡糖",
+      "loop": false,
+      "params": [
+        "chuipaopao",
+        "chuipaopao1",
+        "chuipaopao5",
+        "chuipaopao6",
+        "chuipaopao2",
+        "chuipaopao7",
+        "chuipaopao3",
+        "chuipaopao4"
+      ],
+      "duration": 5
+    },
+    "splash": {
+      "group": "splash",
+      "file": "喷水.motion3.json",
+      "label": "鲸鱼喷水",
+      "loop": false,
+      "params": [
+        "pengshui"
+      ],
+      "duration": 0.467
+    }
+  },
+  "expressions": {
+    "love": {
+      "file": "expressions/love.exp3.json",
+      "params": [
+        {
+          "id": "love",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "兔兔贴纸": {
+      "file": "expressions/兔兔贴纸.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek82",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "单边马尾": {
+      "file": "expressions/单边马尾.exp3.json",
+      "params": [
+        {
+          "id": "fx1",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "双手比耶": {
+      "file": "expressions/双手比耶.exp3.json",
+      "params": [
+        {
+          "id": "phone7",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "吐舌": {
+      "file": "expressions/吐舌.exp3.json",
+      "params": [
+        {
+          "id": "ParamBrowRForm2",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamCheek79",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamMouthForm",
+          "value": 0.9735565781593323,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamMouthOpenY",
+          "value": 0.7558661103248596,
+          "blend": "Add"
+        }
+      ]
+    },
+    "吐魂": {
+      "file": "expressions/吐魂.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek18",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "呆呆眼": {
+      "file": "expressions/呆呆眼.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek20",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "哭": {
+      "file": "expressions/哭.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek20",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamCheek27",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamCheek23",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLX",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLY",
+          "value": -0.30000001192092896,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLAngle",
+          "value": 0.25,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLForm",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRX",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRY",
+          "value": -0.30000001192092896,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRAngle",
+          "value": 0.25,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRForm",
+          "value": -1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "喵喵手~喵~动画": {
+      "file": "expressions/喵喵手~喵~动画.exp3.json",
+      "params": [
+        {
+          "id": "maoshou",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamCheek51",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamCheek61",
+          "value": 0,
+          "blend": "Add"
+        }
+      ]
+    },
+    "圆眼镜": {
+      "file": "expressions/圆眼镜.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek70",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "墨镜": {
+      "file": "expressions/墨镜.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek71",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamEyeLOpen",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamEyeROpen",
+          "value": -1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "头箍": {
+      "file": "expressions/头箍.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek38",
+          "value": 3,
+          "blend": "Add"
+        }
+      ]
+    },
+    "巴菲": {
+      "file": "expressions/巴菲.exp3.json",
+      "params": [
+        {
+          "id": "baleite",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "开心兴奋": {
+      "file": "expressions/开心兴奋.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek76",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamEyeLOpen",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamEyeROpen",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLX",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLY",
+          "value": -0.800000011920929,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLAngle",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLForm",
+          "value": -0.6000000238418579,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRX",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRY",
+          "value": -0.800000011920929,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRAngle",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRForm",
+          "value": -0.6000000238418579,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamMouthForm",
+          "value": 1.5,
+          "blend": "Add"
+        }
+      ]
+    },
+    "心跳": {
+      "file": "expressions/心跳.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek73",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "悲伤": {
+      "file": "expressions/悲伤.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek15",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLAngle",
+          "value": 0.2999999523162842,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLForm",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRAngle",
+          "value": 0.2999999523162842,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRForm",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamMouthForm",
+          "value": -1.5,
+          "blend": "Add"
+        }
+      ]
+    },
+    "情绪花花": {
+      "file": "expressions/情绪花花.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek26",
+          "value": 360,
+          "blend": "Add"
+        }
+      ]
+    },
+    "感叹号": {
+      "file": "expressions/感叹号.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek75",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "手机换色": {
+      "file": "expressions/手机换色.exp3.json",
+      "params": [
+        {
+          "id": "shouji",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "挤": {
+      "file": "expressions/挤.exp3.json",
+      "params": [
+        {
+          "id": "ji",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "撤回": {
+      "file": "expressions/撤回.exp3.json",
+      "params": [
+        {
+          "id": "chehui",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "方眼镜": {
+      "file": "expressions/方眼镜.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek72",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "星星眼": {
+      "file": "expressions/星星眼.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek16",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "晕晕": {
+      "file": "expressions/晕晕.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek77",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamEyeLOpen",
+          "value": -0.5,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamEyeROpen",
+          "value": -0.5,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLY",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLForm",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRY",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRForm",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "椭圆眼镜": {
+      "file": "expressions/椭圆眼镜.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek10",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "橡皮": {
+      "file": "expressions/橡皮.exp3.json",
+      "params": [
+        {
+          "id": "pi",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "流汗": {
+      "file": "expressions/流汗.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek19",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "深色桌布": {
+      "file": "expressions/深色桌布.exp3.json",
+      "params": [
+        {
+          "id": "cc2",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "点菜按下": {
+      "file": "expressions/点菜按下.exp3.json",
+      "params": [
+        {
+          "id": "pointZ",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "爱心眼": {
+      "file": "expressions/爱心眼.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek15",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamCheek17",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "Paramhh2",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLX",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLY",
+          "value": -0.30000001192092896,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLAngle",
+          "value": 0.20000004768371582,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLForm",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRX",
+          "value": 0,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRY",
+          "value": -0.30000001192092896,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRAngle",
+          "value": 0.20000004768371582,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRForm",
+          "value": -1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "猫猫贴纸": {
+      "file": "expressions/猫猫贴纸.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek83",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "生气": {
+      "file": "expressions/生气.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek80",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamCheek23",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLX",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLY",
+          "value": -0.5,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLAngle",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowLForm",
+          "value": -0.5876975059509277,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRX",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRY",
+          "value": -0.45431703329086304,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRAngle",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamBrowRForm",
+          "value": -0.699999988079071,
+          "blend": "Add"
+        }
+      ]
+    },
+    "画笔": {
+      "file": "expressions/画笔.exp3.json",
+      "params": [
+        {
+          "id": "bi",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "脸红": {
+      "file": "expressions/脸红.exp3.json",
+      "params": [
+        {
+          "id": "Paramhh2",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "蛋包饭": {
+      "file": "expressions/蛋包饭.exp3.json",
+      "params": [
+        {
+          "id": "point",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "danbaofan",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "蝴蝶结贴纸": {
+      "file": "expressions/蝴蝶结贴纸.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek81",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "调皮": {
+      "file": "expressions/调皮.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek21",
+          "value": 1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamEyeROpen",
+          "value": -1,
+          "blend": "Add"
+        },
+        {
+          "id": "ParamMouthForm",
+          "value": 1.5,
+          "blend": "Add"
+        }
+      ]
+    },
+    "闭眼口水": {
+      "file": "expressions/闭眼口水.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek22",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "问号": {
+      "file": "expressions/问号.exp3.json",
+      "params": [
+        {
+          "id": "ParamCheek74",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "阴暗": {
+      "file": "expressions/阴暗.exp3.json",
+      "params": [
+        {
+          "id": "Paramhh3",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "魔爪": {
+      "file": "expressions/魔爪.exp3.json",
+      "params": [
+        {
+          "id": "mozhua",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "魔爪换色": {
+      "file": "expressions/魔爪换色.exp3.json",
+      "params": [
+        {
+          "id": "mozhua2",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "鲸鱼": {
+      "file": "expressions/鲸鱼.exp3.json",
+      "params": [
+        {
+          "id": "jingyu",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    },
+    "鲸鱼放桌上": {
+      "file": "expressions/鲸鱼放桌上.exp3.json",
+      "params": [
+        {
+          "id": "fangzhuoshang",
+          "value": 1,
+          "blend": "Add"
+        }
+      ]
+    }
+  }
+}

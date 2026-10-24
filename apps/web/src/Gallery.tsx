@@ -10,11 +10,10 @@ import {
   UserRound,
   Download,
   Trash2,
-  Plus,
   FileText,
 } from 'lucide-react';
 import type { Artifact, Settings } from '@livra/shared';
-import { personaSchema } from '@livra/shared';
+import { PersonaArtifact } from './PersonaArtifact';
 import { api, API, download } from './api';
 import { PageIntro, Empty, Badge, IconButton, Button, Modal } from './ui';
 import type { Notify } from './App';
@@ -39,11 +38,13 @@ export function Gallery({
   saveSettings,
   epoch,
   notify,
+  onUseTheme,
 }: {
   settings: Settings;
   saveSettings: (s: Settings) => Promise<Settings>;
   epoch: number;
   notify: Notify;
+  onUseTheme: (id: string) => void;
 }) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]),
     [loading, setLoading] = useState(true),
@@ -237,29 +238,13 @@ export function Gallery({
             )}
             {detail.kind === 'theme' && <pre className="artifact-code">{detail.data.css}</pre>}
             {detail.kind === 'persona' && (
-              <div className="persona-artifact">
-                <span>{detail.data.persona?.symbol}</span>
-                <h2>{detail.data.persona?.name}</h2>
-                <p>{detail.data.persona?.description}</p>
-                <Button
-                  variant="primary"
-                  onClick={async () => {
-                    try {
-                      const p = personaSchema.parse({
-                        ...detail.data.persona,
-                        id: crypto.randomUUID(),
-                      });
-                      await saveSettings({ ...settings, personas: [...settings.personas, p] });
-                      notify('新伙伴已添加到人偶馆');
-                    } catch (e) {
-                      notify((e as Error).message, 'error');
-                    }
-                  }}
-                >
-                  <Plus size={15} />
-                  添加到人偶馆
-                </Button>
-              </div>
+              <PersonaArtifact
+                persona={detail.data.persona}
+                liveModel={detail.data.liveModel}
+                settings={settings}
+                saveSettings={saveSettings}
+                notify={notify}
+              />
             )}
             {detail.data.prompt && <p className="detail-prompt">{detail.data.prompt}</p>}
             {detail.kind === 'text' && (
@@ -272,6 +257,12 @@ export function Gallery({
               删除作品
             </Button>
             <div className="button-row">
+              {detail.kind === 'theme' && (
+                <Button variant="primary" onClick={() => onUseTheme(detail.id)}>
+                  <Presentation size={15} />
+                  用此主题创作
+                </Button>
+              )}
               <Button onClick={() => favorite(detail)}>
                 <Star size={14} fill={detail.favorite ? 'currentColor' : 'none'} />
                 {detail.favorite ? '取消收藏' : '收藏'}

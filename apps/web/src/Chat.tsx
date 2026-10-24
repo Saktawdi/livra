@@ -8,7 +8,6 @@ import {
   FileText,
   X,
   Brain,
-  Search,
   Mic,
   Volume2,
   VolumeX,
@@ -35,10 +34,14 @@ import type {
   Settings,
   ToolCall,
 } from '@livra/shared';
-import { api, download, readAttachment } from './api';
+import { download, readAttachment } from './api';
 import { useVoice } from './useVoice';
 import { useDraft } from './useDraft';
 import { Presence } from './Presence';
+import { ModelPicker } from './ModelPicker';
+import { ComposerMetrics } from './ComposerMetrics';
+import { ReasoningPicker } from './ReasoningPicker';
+import type { RemoteModels } from './useSaktaModels';
 import { ArtifactPreview } from './ArtifactPreview';
 import { Button, IconButton, Markdown, CopyButton, Modal } from './ui';
 import type { Notify, Approval } from './App';
@@ -53,6 +56,7 @@ const toolNames: Record<string, string> = {
   generate_image: '生成图像',
   generate_music: '生成音乐',
   create_persona: '设计人偶',
+  list_live2d_models: '查找人偶形象',
 };
 const shortcuts = [
   {
@@ -87,6 +91,7 @@ const shortcuts = [
 
 type Props = {
   settings: Settings;
+  remoteModels: RemoteModels;
   persona: Persona;
   conversation: Conversation | null;
   busy: boolean;
@@ -104,6 +109,10 @@ type Props = {
   onStop: () => void;
   onPersona: (id: string) => void;
   onSettings: () => void;
+  onUseTheme: (id: string) => void;
+  detachedPresence: boolean;
+  onDetachPresence: () => void;
+  focusRequest: number;
   onPersonaConfig: () => void;
   initialPrompt?: string;
   onPromptUsed: () => void;
@@ -112,6 +121,7 @@ type Props = {
 };
 export function Chat({
   settings,
+  remoteModels,
   persona,
   conversation,
   busy,
@@ -123,6 +133,10 @@ export function Chat({
   onStop,
   onPersona,
   onSettings,
+  onUseTheme,
+  detachedPresence,
+  onDetachPresence,
+  focusRequest,
   onPersonaConfig,
   initialPrompt,
   onPromptUsed,
@@ -130,14 +144,10 @@ export function Chat({
   notify,
 }: Props) {
   const [draft, setDraft] = useDraft(conversation?.id);
-  const [attachments, setAttachments] = useState<Attachment[]>([]),
-    [modelMenu, setModelMenu] = useState(false),
-    [modelSearch, setModelSearch] = useState(''),
-    [modelIndex, setModelIndex] = useState(0);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [providerId, setProviderId] = useState(settings.defaultProvider),
     [model, setModel] = useState(settings.defaultModel),
     [reasoning, setReasoning] = useState('auto'),
-    [saktaModels, setSaktaModels] = useState<string[]>([]),
     [listening, setListening] = useState(false),
     [mobilePresence, setMobilePresence] = useState(false),
     [artifactId, setArtifactId] = useState(''),
@@ -155,6 +165,9 @@ export function Chat({
     dragDepth = useRef(0);
   const [compact, setCompact] = useState(() => matchMedia('(max-width:940px)').matches);
   useEffect(() => {
+    if (focusRequest) textRef.current?.focus();
+  }, [focusRequest]);
+  useEffect(() => {
     const media = matchMedia('(max-width:940px)');
     const change = () => {
       setCompact(media.matches);
@@ -163,10 +176,6 @@ export function Chat({
     media.addEventListener('change', change);
     return () => media.removeEventListener('change', change);
   }, []);
-  useEffect(() => {
-    if (modelMenu)
-      document.getElementById('model-option-' + modelIndex)?.scrollIntoView({ block: 'nearest' });
-  }, [modelIndex, modelMenu]);
   const {
     speaking,
     preparing,
@@ -178,36 +187,23 @@ export function Chat({
     ...settings.providers
       .filter((p) => p.kind === 'chat')
       .flatMap((p) => p.models.map((m) => ({ provider: p.id, name: p.name, model: m }))),
-    ...saktaModels.map((m) => ({ provider: 'sakta', name: 'Sakta', model: m })),
+    ...remoteModels.models.map((m) => ({ provider: 'sakta', name: 'Sakta · 账号模型', model: m })),
   ];
-  const filtered = options.filter((o) =>
-    (o.model + ' ' + o.name).toLowerCase().includes(modelSearch.toLowerCase()),
-  );
   const slashes = shortcuts.filter((s) => (s.command + ' ' + s.label).includes(draft.slice(0, 25)));
   const showSlash =
     draft.startsWith('/') && !draft.includes(' ') && !slashHidden && slashes.length > 0;
-  useEffect(() => {
-    const controller = new AbortController();
-    if (settings.sakta?.connected)
-      api('/sakta/models', { signal: controller.signal })
-        .then((d) => setSaktaModels(d.models))
-        .catch((e) => {
-          if (!controller.signal.aborted) notify(e.message, 'error');
-        });
-    else setSaktaModels([]);
-    return () => controller.abort();
-  }, [settings.sakta?.connected]);
   useEffect(() => {
     setProviderId(settings.defaultProvider);
     setModel(settings.defaultModel);
   }, [settings.defaultProvider, settings.defaultModel]);
   useEffect(() => {
+    if (providerId === 'sakta' && (remoteModels.loading || remoteModels.error)) return;
     if (!options.some((o) => o.provider === providerId && o.model === model)) {
       const first = options.find((o) => o.provider === providerId) || options[0];
       setProviderId(first?.provider || '');
       setModel(first?.model || '');
     }
-  }, [JSON.stringify(options)]);
+  }, [JSON.stringify(options), remoteModels.loading, remoteModels.error, providerId, model]);
   useEffect(() => {
     if (initialPrompt) {
       setDraft(initialPrompt);
@@ -255,6 +251,12 @@ export function Chat({
   }
   async function submit() {
     if ((!draft.trim() && !attachments.length) || busy || submission.current) return;
+    if (
+      providerId === 'sakta' &&
+      remoteModels.loading &&
+      !options.some((o) => o.provider === providerId && o.model === model)
+    )
+      return;
     if (!model || !providerId) {
       onSettings();
       return;
@@ -312,12 +314,9 @@ export function Chat({
       setListening(false);
     }
   }
-  function selectModel(i: number) {
-    const o = filtered[i];
-    if (!o) return;
+  function selectModel(o: { provider: string; model: string }) {
     setProviderId(o.provider);
     setModel(o.model);
-    setModelMenu(false);
     saveSettings({ ...settings, defaultProvider: o.provider, defaultModel: o.model }).catch((e) =>
       notify(e.message, 'error'),
     );
@@ -340,10 +339,19 @@ export function Chat({
       onArtifact={setArtifactId}
       notify={notify}
       saveSettings={saveSettings}
+      paused={!!artifactId}
+      onDetach={onDetachPresence}
     />
   );
   return (
-    <div className={'chat-layout ' + (work ? 'mode-work' : 'mode-companion')}>
+    <div
+      className={
+        'chat-layout ' +
+        (work ? 'mode-work' : 'mode-companion') +
+        (empty ? ' is-empty' : '') +
+        (detachedPresence ? ' presence-detached' : '')
+      }
+    >
       <section className="chat-main" aria-label="对话">
         <div className="chat-toolbar">
           <div className="mode-segment" role="group" aria-label="空间模式">
@@ -405,64 +413,6 @@ export function Chat({
               </span>
               <h1>{work ? '今天，要完成什么？' : '今天，聊点什么？'}</h1>
               <p>{work ? '把任务交给我，我们一步步来。' : persona.greeting}</p>
-              <div className={'start-actions ' + (work ? 'task-actions' : 'talk-actions')}>
-                {work
-                  ? [
-                      {
-                        title: '研究一个主题',
-                        detail: '搜索、整理、保留来源',
-                        icon: Globe,
-                        text: '我想研究一个主题，请先帮我确认研究范围和期望的交付形式。',
-                      },
-                      {
-                        title: '制作一份演示',
-                        detail: '从结构到 Marp 成稿',
-                        icon: Presentation,
-                        text: '帮我制作一份 Marp 演示文稿。请先问我主题、受众和页数。',
-                      },
-                      {
-                        title: '创作图像或音乐',
-                        detail: '描述想法，生成作品',
-                        icon: Image,
-                        text: '我想创作一份作品，先帮我确定适合的形式和风格。',
-                      },
-                    ].map(({ title, detail, icon: Icon, text }) => (
-                      <button
-                        key={title}
-                        onClick={() => {
-                          setDraft(text);
-                          textRef.current?.focus();
-                        }}
-                      >
-                        <span className="start-icon">
-                          <Icon size={22} />
-                        </span>
-                        <span>
-                          <strong>{title}</strong>
-                          <small>{detail}</small>
-                        </span>
-                        <ArrowUpRight size={18} />
-                      </button>
-                    ))
-                  : ['随便聊聊', '理清一件事', '找点新鲜事'].map((title, i) => (
-                      <button
-                        key={title}
-                        onClick={() => {
-                          setDraft(
-                            [
-                              '想和你聊聊天。',
-                              '有件事想和你一起理一理。',
-                              '最近有什么有趣的事可以尝试？',
-                            ][i],
-                          );
-                          textRef.current?.focus();
-                        }}
-                      >
-                        {title}
-                        <ArrowUpRight size={15} />
-                      </button>
-                    ))}
-              </div>
             </div>
           ) : (
             <div className="message-list">
@@ -759,40 +709,17 @@ export function Chat({
                     e.target.value = '';
                   }}
                 />
-                <button
-                  className={'model-trigger ' + (!options.length ? 'unconnected' : '')}
-                  disabled={busy}
-                  onClick={() => {
-                    if (!options.length) {
-                      onSettings();
-                      return;
-                    }
-                    setModelMenu(true);
-                    setModelIndex(0);
-                    setModelSearch('');
-                  }}
-                >
-                  <span className="model-dot" />
-                  {model || '连接模型'}
-                  <ChevronDown size={14} />
-                </button>
+                <ModelPicker
+                  options={options}
+                  provider={providerId}
+                  model={model}
+                  remote={remoteModels}
+                  busy={busy}
+                  onSelect={selectModel}
+                  onSettings={onSettings}
+                />
                 {model && (
-                  <label className="reasoning-control" title="推理强度">
-                    <Brain size={16} />
-                    <select
-                      aria-label="推理强度"
-                      value={reasoning}
-                      onChange={(e) => setReasoning(e.target.value)}
-                    >
-                      <option value="auto">自动</option>
-                      <option value="none">关闭</option>
-                      <option value="minimal">最低</option>
-                      <option value="low">低</option>
-                      <option value="medium">中</option>
-                      <option value="high">高</option>
-                      <option value="xhigh">最高</option>
-                    </select>
-                  </label>
+                  <ReasoningPicker value={reasoning} onChange={setReasoning} disabled={busy} />
                 )}
               </div>
               <div className="composer-right">
@@ -811,7 +738,12 @@ export function Chat({
                   <button
                     className="send-button"
                     aria-label="发送消息"
-                    disabled={!draft.trim() && !attachments.length}
+                    disabled={
+                      (!draft.trim() && !attachments.length) ||
+                      (providerId === 'sakta' &&
+                        remoteModels.loading &&
+                        !options.some((o) => o.provider === providerId && o.model === model))
+                    }
                     onClick={submit}
                   >
                     <ArrowUp size={21} />
@@ -820,102 +752,93 @@ export function Chat({
               </div>
             </div>
           </div>
-          <div className="composer-caption">
-            <span>
-              {listening
-                ? '正在聆听，再次点击麦克风结束'
-                : !options.length
-                  ? '使用自己的模型，或登录 Sakta'
-                  : 'Shift + Enter 换行'}
-            </span>
-            {!options.length ? (
-              <button onClick={onSettings}>
-                设置连接
-                <ArrowUpRight size={14} />
-              </button>
-            ) : (
-              <span className="keyboard-send">
-                <kbd>Enter</kbd>发送
-              </span>
-            )}
-          </div>
+          <ComposerMetrics
+            conversation={conversation}
+            persona={persona}
+            settings={settings}
+            provider={providerId}
+            model={model}
+            draft={draft}
+            attachments={attachments}
+            busy={busy}
+          />
+          {empty && (
+            <div className={'start-actions ' + (work ? 'task-actions' : 'talk-actions')}>
+              {work
+                ? [
+                    {
+                      title: '研究一个主题',
+                      detail: '搜索、整理、保留来源',
+                      icon: Globe,
+                      text: '我想研究一个主题，请先帮我确认研究范围和期望的交付形式。',
+                    },
+                    {
+                      title: '制作一份演示',
+                      detail: '从结构到 Marp 成稿',
+                      icon: Presentation,
+                      text: '帮我制作一份 Marp 演示文稿。请先问我主题、受众和页数。',
+                    },
+                    {
+                      title: '创作图像或音乐',
+                      detail: '描述想法，生成作品',
+                      icon: Image,
+                      text: '我想创作一份作品，先帮我确定适合的形式和风格。',
+                    },
+                  ].map(({ title, detail, icon: Icon, text }) => (
+                    <button
+                      key={title}
+                      onClick={() => {
+                        setDraft(text);
+                        textRef.current?.focus();
+                      }}
+                    >
+                      <span className="start-icon">
+                        <Icon size={22} />
+                      </span>
+                      <span>
+                        <strong>{title}</strong>
+                        <small>{detail}</small>
+                      </span>
+                      <ArrowUpRight size={18} />
+                    </button>
+                  ))
+                : ['随便聊聊', '理清一件事', '找点新鲜事'].map((title, i) => (
+                    <button
+                      key={title}
+                      onClick={() => {
+                        setDraft(
+                          [
+                            '想和你聊聊天。',
+                            '有件事想和你一起理一理。',
+                            '最近有什么有趣的事可以尝试？',
+                          ][i],
+                        );
+                        textRef.current?.focus();
+                      }}
+                    >
+                      {title}
+                      <ArrowUpRight size={15} />
+                    </button>
+                  ))}
+            </div>
+          )}
+          {listening && (
+            <div className="dictation-status" role="status">
+              正在聆听，再次点击麦克风结束
+            </div>
+          )}
         </div>
       </section>
-      {!compact && <div className="desktop-presence">{presence}</div>}
+      {!compact && !detachedPresence && <div className="desktop-presence">{presence}</div>}
       {mobilePresence && (
         <Modal title={persona.name} onClose={() => setMobilePresence(false)}>
           <div className="mobile-presence">{presence}</div>
         </Modal>
       )}
-      {modelMenu && (
-        <Modal title="选择模型" onClose={() => setModelMenu(false)}>
-          <div className="command-input">
-            <Search size={19} />
-            <input
-              autoFocus
-              data-autofocus
-              aria-label="搜索模型"
-              placeholder="名称或供应商"
-              value={modelSearch}
-              onChange={(e) => {
-                setModelSearch(e.target.value);
-                setModelIndex(0);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setModelIndex((i) => (i + 1) % Math.max(1, filtered.length));
-                }
-                if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setModelIndex((i) => (i - 1 + filtered.length) % Math.max(1, filtered.length));
-                }
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  selectModel(modelIndex);
-                }
-              }}
-            />
-          </div>
-          <div className="model-options" role="listbox" aria-label="模型列表">
-            {filtered.length ? (
-              filtered.map((o, i) => (
-                <button
-                  id={'model-option-' + i}
-                  role="option"
-                  aria-selected={o.provider === providerId && o.model === model}
-                  className={i === modelIndex ? 'active' : ''}
-                  key={o.provider + o.model}
-                  onClick={() => selectModel(i)}
-                >
-                  <span>
-                    <strong>{o.model}</strong>
-                    <small>{o.name}</small>
-                  </span>
-                  {o.provider === providerId && o.model === model && <Check size={17} />}
-                </button>
-              ))
-            ) : (
-              <p className="command-empty">没有匹配的模型</p>
-            )}
-          </div>
-          <div className="modal-footer">
-            <Button
-              onClick={() => {
-                setModelMenu(false);
-                onSettings();
-              }}
-            >
-              <Plus size={16} />
-              管理连接
-            </Button>
-            <Button onClick={() => setModelMenu(false)}>关闭</Button>
-          </div>
-        </Modal>
-      )}
       {artifactId && (
         <ArtifactPreview
           id={artifactId}
+          onUseTheme={onUseTheme}
           onClose={() => setArtifactId('')}
           settings={settings}
           saveSettings={saveSettings}

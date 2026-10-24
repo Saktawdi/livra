@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import {
   Plus,
   Search,
-  SlidersHorizontal,
   MessageCircle,
   Users,
   WandSparkles,
@@ -17,22 +16,17 @@ import {
   ChevronRight,
   CircleHelp,
 } from 'lucide-react';
-import type {
-  Settings,
-  Conversation,
-  Persona,
-  LiveState,
-  Mood,
-  Message,
-  Attachment,
-  AgentEvent,
-} from '@livra/shared';
-import { api, post, put, streamRun, ApiError } from './api';
+import type { Settings, Conversation, Persona, Attachment } from '@livra/shared';
+import { api, post, put, ApiError } from './api';
 import { CommandMenu, type Command } from './CommandMenu';
 import { MoreHorizontal, Pin, Trash2, Settings2 } from 'lucide-react';
 import { dictionaries } from './i18n';
 import { Button, IconButton, Field, Modal } from './ui';
 import { Chat } from './Chat';
+import { useSaktaModels } from './useSaktaModels';
+import { useConversationRuns } from './useConversationRuns';
+import { CompanionDock } from './CompanionDock';
+import { Ambient } from './Ambient';
 const SettingsPanel = lazy(() => import('./Settings').then((m) => ({ default: m.SettingsPanel })));
 const PersonaLibrary = lazy(() =>
   import('./Personas').then((m) => ({ default: m.PersonaLibrary })),
@@ -50,9 +44,12 @@ export function App() {
     [fatal, setFatal] = useState(''),
     [locked, setLocked] = useState(false),
     [access, setAccess] = useState('');
+  const [appearancePreview, setAppearancePreview] = useState<Settings | null>(null);
+  const appearanceSettings = appearancePreview || settings;
   const [conversations, setConversations] = useState<Conversation[]>([]),
     [conversation, setConversation] = useState<Conversation | null>(null),
     [personaId, setPersonaId] = useState('lumi');
+  const remoteModels = useSaktaModels(settings?.sakta);
   const [view, setView] = useState<View>('chat'),
     [settingsTab, setSettingsTab] = useState<string | null>(null),
     [sidebar, setSidebar] = useState(false);
@@ -61,23 +58,41 @@ export function App() {
     [historyTitle, setHistoryTitle] = useState(''),
     [personaToEdit, setPersonaToEdit] = useState(''),
     [pendingPrompt, setPendingPrompt] = useState('');
+  const [studioTheme, setStudioTheme] = useState('');
+  const [detachedPresence, setDetachedPresence] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const useTheme = (id: string) => {
+    setStudioTheme(id);
+    setView('studio');
+  };
   const [smallScreen, setSmallScreen] = useState(() => matchMedia('(max-width:720px)').matches),
     sidebarRef = useRef<HTMLElement>(null);
-  const [saktaEnabled, setSaktaEnabled] = useState(true),
-    [busy, setBusy] = useState(false),
-    [liveState, setLiveState] = useState<LiveState>('idle'),
-    [mood, setMood] = useState<Mood>('neutral');
-  const [approvals, setApprovals] = useState<Approval[]>([]),
-    [artifactEpoch, setArtifactEpoch] = useState(0),
+  const [saktaEnabled, setSaktaEnabled] = useState(true);
+  const [artifactEpoch, setArtifactEpoch] = useState(0),
     [toast, setToast] = useState<{ message: string; kind: string } | null>(null);
-  const runRef = useRef<{ id: string; controller: AbortController } | null>(null),
-    selected = useRef<string | null>(null),
+  const selected = useRef<string | null>(null),
     toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const notify: Notify = (message, kind = 'success') => {
     setToast({ message, kind });
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 4500);
   };
+  const taskRuns = useConversationRuns({
+    notify,
+    onArtifact: () => setArtifactEpoch((v) => v + 1),
+    onComplete: async (saved) => {
+      if (selected.current === saved.id) setConversation(saved);
+      await refreshHistory();
+      if (selected.current !== saved.id) notify('对话「' + saved.title + '」已结束');
+    },
+  });
+  const activeSession = conversation ? taskRuns.sessions[conversation.id] : undefined;
+  const busy = !!activeSession,
+    liveState = activeSession?.state || 'idle',
+    mood = activeSession?.mood || 'neutral';
+  const visibleConversation = activeSession?.conversation || conversation;
+  const creating = useRef(false);
+  const draftGeneration = useRef(0);
   async function bootstrap() {
     setLoading(true);
     setFatal('');
@@ -116,9 +131,6 @@ export function App() {
   }
   useEffect(() => {
     bootstrap();
-    return () => {
-      runRef.current?.controller.abort();
-    };
   }, []);
   useEffect(() => {
     if (loading) return;
@@ -167,6 +179,7 @@ export function App() {
     };
   }, [sidebar, smallScreen]);
   useEffect(() => {
+    const settings = appearanceSettings;
     if (!settings) return;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
@@ -178,8 +191,15 @@ export function App() {
     document.documentElement.dataset.accent = settings.accent;
     document.documentElement.dataset.motion = settings.reducedMotion ? 'reduced' : 'full';
     document.documentElement.lang = settings.locale;
+    document.documentElement.dataset.skin = settings.appearance.skin;
+    document.documentElement.dataset.density = settings.appearance.density;
+    document.documentElement.dataset.bubble = settings.appearance.bubble;
+    document.documentElement.style.setProperty(
+      '--bubble-radius',
+      settings.appearance.radius + 'px',
+    );
     return () => media.removeEventListener('change', apply);
-  }, [settings?.theme, settings?.accent, settings?.reducedMotion, settings?.locale]);
+  }, [appearanceSettings]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -205,31 +225,24 @@ export function App() {
     setConversations(data.conversations);
   }
   function newChat(id?: string) {
-    if (busy) {
-      notify('先停止或等待当前任务完成', 'error');
-      return;
-    }
+    draftGeneration.current++;
     selected.current = null;
     setConversation(null);
     if (id) setPersonaId(id);
     setView('chat');
-    setMood('neutral');
     setSidebar(false);
   }
   async function openConversation(id: string) {
-    if (busy) {
-      notify('先停止或等待当前任务完成', 'error');
-      return;
-    }
+    draftGeneration.current++;
     selected.current = id;
     setView('chat');
     setSidebar(false);
     try {
-      const c = await api<Conversation>('/conversations/' + id);
+      const c =
+        taskRuns.sessions[id]?.conversation || (await api<Conversation>('/conversations/' + id));
       if (selected.current === id) {
         setConversation(c);
         setPersonaId(c.personaId);
-        setMood('neutral');
       }
     } catch (e) {
       notify((e as Error).message, 'error');
@@ -252,7 +265,6 @@ export function App() {
         return;
       }
     setPersonaId(id);
-    setMood('neutral');
   }
   async function send(
     content: string,
@@ -268,142 +280,28 @@ export function App() {
       return false;
     }
     let c = conversation;
+    if (!c && creating.current) return false;
+    const generation = draftGeneration.current;
     try {
       if (!c) {
+        creating.current = true;
         c = await post<Conversation>('/conversations', { personaId });
-        selected.current = c.id;
-        setConversation(c);
+        if (generation === draftGeneration.current && selected.current === null) {
+          selected.current = c.id;
+          setConversation(c);
+        }
         setConversations((list) => [c!, ...list]);
       }
-    } catch (e) {
-      notify((e as Error).message, 'error');
-      return false;
-    }
-    const controller = new AbortController();
-    runRef.current = { id: '', controller };
-    setBusy(true);
-    setLiveState('thinking');
-    setMood('thinking');
-    const user: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content,
-      attachments,
-      created: Date.now(),
-    };
-    setConversation((prev) => (prev ? { ...prev, messages: [...prev.messages, user] } : prev));
-    let assistantId = '';
-    let accepted = false;
-    try {
-      await streamRun(
-        { conversationId: c!.id, providerId, model, content, attachments, reasoning },
-        controller.signal,
-        (event: AgentEvent) => {
-          if (event.type === 'start') {
-            accepted = true;
-            runRef.current!.id = event.runId;
-            assistantId = event.message.id;
-            setConversation((prev) =>
-              prev ? { ...prev, messages: [...prev.messages, event.message] } : prev,
-            );
-          }
-          if (event.type === 'delta' || event.type === 'reasoning') {
-            const key = event.type === 'delta' ? 'content' : 'reasoning';
-            if (event.type === 'delta') setLiveState('thinking');
-            setConversation((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    messages: prev.messages.map((m) =>
-                      m.id === assistantId ? { ...m, [key]: (m[key] || '') + event.text } : m,
-                    ),
-                  }
-                : prev,
-            );
-          }
-          if (event.type === 'tool-start') {
-            setLiveState('working');
-            setConversation((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    messages: prev.messages.map((m) =>
-                      m.id === assistantId ? { ...m, tools: [...(m.tools || []), event.tool] } : m,
-                    ),
-                  }
-                : prev,
-            );
-          }
-          if (event.type === 'tool-end') {
-            setLiveState('thinking');
-            setConversation((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    messages: prev.messages.map((m) =>
-                      m.id === assistantId
-                        ? {
-                            ...m,
-                            tools: m.tools?.map((t) => (t.id === event.tool.id ? event.tool : t)),
-                          }
-                        : m,
-                    ),
-                  }
-                : prev,
-            );
-          }
-          if (event.type === 'emotion') setMood(event.mood);
-          if (event.type === 'approval')
-            setApprovals((items) => [
-              ...items,
-              { id: event.id, runId: event.runId, name: event.name, args: event.args },
-            ]);
-          if (event.type === 'artifact') setArtifactEpoch((v) => v + 1);
-          if (event.type === 'usage')
-            setConversation((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    messages: prev.messages.map((m) =>
-                      m.id === assistantId ? { ...m, usage: event.usage } : m,
-                    ),
-                  }
-                : prev,
-            );
-          if (event.type === 'error' && !event.cancelled) {
-            setLiveState('error');
-            notify(event.message, 'error');
-          }
-        },
-      );
     } catch (error) {
-      if (!controller.signal.aborted) notify((error as Error).message, 'error');
+      notify((error as Error).message, 'error');
+      return false;
     } finally {
-      setBusy(false);
-      setLiveState('idle');
-      setMood((m) => (m === 'thinking' ? 'neutral' : m));
-      setApprovals([]);
-      runRef.current = null;
-      try {
-        const saved = await api<Conversation>('/conversations/' + c!.id);
-        if (selected.current === saved.id) setConversation(saved);
-        await refreshHistory();
-      } catch {}
+      creating.current = false;
     }
-    return accepted;
+    return taskRuns.start(c, { content, attachments, providerId, model, reasoning });
   }
-  async function stop() {
-    if (runRef.current?.id) await post(`/runs/${runRef.current.id}/stop`, {}).catch(() => {});
-    runRef.current?.controller.abort();
-  }
-  async function approve(item: Approval, allow: boolean) {
-    try {
-      await post(`/runs/${item.runId}/approvals/${item.id}`, { allow });
-      setApprovals((items) => items.filter((x) => x.id !== item.id));
-    } catch (e) {
-      notify((e as Error).message, 'error');
-    }
-  }
+  const stop = () => taskRuns.stop(selected.current);
+  const approve = taskRuns.approve;
   async function removeConversation(id: string) {
     if (!confirm('删除这段对话？此操作无法撤销。')) return;
     try {
@@ -536,6 +434,7 @@ export function App() {
   ];
   return (
     <div className="app-shell">
+      {appearanceSettings && <Ambient settings={appearanceSettings} />}
       {sidebar && <div className="sidebar-backdrop" onClick={() => setSidebar(false)} />}
       <aside
         ref={sidebarRef}
@@ -553,7 +452,22 @@ export function App() {
           }}
           aria-label="Livra 首页"
         >
-          <span className="livra-logo">l</span>
+          <svg
+            className="livra-mark"
+            width="28"
+            height="30"
+            viewBox="0 0 28 30"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M6 4v15c0 4 3 7 7 7h9M12 4v13c0 2 1 3 3 3h7"
+              stroke="currentColor"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+            />
+            <circle cx="21" cy="6" r="3" fill="currentColor" />
+          </svg>
           <strong className="brand-wordmark">livra</strong>
           <span className="brand-local">灵伴</span>
         </a>
@@ -600,8 +514,20 @@ export function App() {
                 key={c.id}
               >
                 <button className="history-title" onClick={() => openConversation(c.id)}>
-                  {c.pinned ? <Pin size={14} /> : <MessageCircle size={14} />}
-                  <span>{c.title}</span>
+                  {taskRuns.sessions[c.id] ? (
+                    <span
+                      className="running-session-dot"
+                      aria-label={
+                        taskRuns.sessions[c.id].approvals.length ? '等待确认' : '正在运行'
+                      }
+                      data-attention={!!taskRuns.sessions[c.id].approvals.length}
+                    />
+                  ) : c.pinned ? (
+                    <Pin size={14} />
+                  ) : (
+                    <MessageCircle size={14} />
+                  )}
+                  <span>{taskRuns.sessions[c.id]?.conversation.title || c.title}</span>
                 </button>
                 <IconButton
                   label={'管理对话 ' + c.title}
@@ -662,7 +588,7 @@ export function App() {
               {view === 'chat' && conversation && (
                 <>
                   <ChevronRight size={15} />
-                  <strong>{conversation.title}</strong>
+                  <strong>{visibleConversation?.title}</strong>
                 </>
               )}
             </span>
@@ -686,9 +612,6 @@ export function App() {
                 <Moon size={19} />
               )}
             </IconButton>
-            <IconButton label={t.settings} onClick={() => setSettingsTab('models')}>
-              <SlidersHorizontal size={19} />
-            </IconButton>
           </div>
         </header>
         <main className={'main-content view-' + view}>
@@ -702,18 +625,27 @@ export function App() {
           >
             {view === 'chat' && (
               <Chat
-                settings={settings}
+                remoteModels={remoteModels}
+                settings={{
+                  ...settings,
+                  reducedMotion: appearanceSettings?.reducedMotion ?? settings.reducedMotion,
+                }}
                 persona={persona}
-                conversation={conversation}
+                key={conversation?.id || 'draft'}
+                conversation={visibleConversation}
                 busy={busy}
                 liveState={liveState}
                 mood={mood}
-                approvals={approvals}
+                approvals={activeSession?.approvals || []}
                 onApprove={approve}
                 onSend={send}
                 onStop={stop}
                 onPersona={changePersona}
                 onSettings={() => setSettingsTab('models')}
+                onUseTheme={useTheme}
+                detachedPresence={detachedPresence}
+                onDetachPresence={() => setDetachedPresence(true)}
+                focusRequest={focusRequest}
                 onPersonaConfig={() => {
                   setPersonaToEdit(persona.id);
                   setView('personas');
@@ -737,6 +669,8 @@ export function App() {
             {view === 'studio' && (
               <Studio
                 settings={settings}
+                requestedThemeId={studioTheme}
+                onThemeUsed={() => setStudioTheme('')}
                 onSettings={() => setSettingsTab('models')}
                 onCreated={() => setArtifactEpoch((v) => v + 1)}
                 onAgent={(prompt) => {
@@ -758,12 +692,33 @@ export function App() {
                 settings={settings}
                 saveSettings={saveSettings}
                 epoch={artifactEpoch}
+                onUseTheme={useTheme}
                 notify={notify}
               />
             )}
           </Suspense>
         </main>
       </div>
+      {(view !== 'chat' || detachedPresence) && (
+        <CompanionDock
+          settings={{
+            ...settings,
+            reducedMotion: appearanceSettings?.reducedMotion ?? settings.reducedMotion,
+          }}
+          persona={persona}
+          sessions={taskRuns.sessions}
+          selectedId={conversation?.id}
+          onOpen={(id) => {
+            if (id) void openConversation(id);
+            else setView('chat');
+            setFocusRequest((n) => n + 1);
+          }}
+          onDock={() => {
+            setDetachedPresence(false);
+            setView('chat');
+          }}
+        />
+      )}
       {commandOpen && <CommandMenu commands={commands} onClose={() => setCommandOpen(false)} />}
       {editingHistory && (
         <Modal title="管理对话" onClose={() => setEditingHistory(null)}>
@@ -816,11 +771,23 @@ export function App() {
         <Suspense fallback={null}>
           <SettingsPanel
             settings={settings}
+            onPreview={setAppearancePreview}
             initialTab={settingsTab}
             saktaEnabled={saktaEnabled}
             saveSettings={saveSettings}
-            onSettings={setSettings}
-            onClose={() => setSettingsTab(null)}
+            onSettings={(next) => {
+              setSettings(next);
+              if (
+                next.sakta?.connected &&
+                settings.sakta?.connected &&
+                next.sakta.name === settings.sakta.name
+              )
+                void remoteModels.refresh();
+            }}
+            onClose={() => {
+              setAppearancePreview(null);
+              setSettingsTab(null);
+            }}
             notify={notify}
           />
         </Suspense>

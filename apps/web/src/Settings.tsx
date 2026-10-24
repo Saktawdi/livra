@@ -1,7 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Plus,
-  Pencil,
   Trash2,
   Server,
   Palette,
@@ -10,22 +9,21 @@ import {
   Search,
   Database,
   UserRound,
-  Check,
   ArrowUpRight,
   KeyRound,
   Download,
   Upload,
   LogOut,
-  Sun,
-  Moon,
-  Monitor,
   RefreshCw,
 } from 'lucide-react';
 import type { Provider, Settings } from '@livra/shared';
 import { providerSchema, settingsSchema, fishModels } from '@livra/shared';
 import { api, post, download } from './api';
-import { Button, IconButton, Field, Modal, Section, Toggle, Badge } from './ui';
+import { Button, IconButton, Field, Modal, Section, Toggle, Badge, Select } from './ui';
+import { useSaktaModels } from './useSaktaModels';
 import type { Notify } from './App';
+import { ModelSkeleton } from './ModelPicker';
+import { Appearance } from './Appearance';
 
 export function SettingsPanel({
   settings,
@@ -33,6 +31,7 @@ export function SettingsPanel({
   saktaEnabled,
   saveSettings,
   onSettings,
+  onPreview,
   onClose,
   notify,
 }: {
@@ -41,19 +40,24 @@ export function SettingsPanel({
   saktaEnabled: boolean;
   saveSettings: (s: Settings) => Promise<Settings>;
   onSettings: (s: Settings) => void;
+  onPreview: (s: Settings) => void;
   onClose: () => void;
   notify: Notify;
 }) {
   const [draft, setDraft] = useState(() => settingsSchema.parse(settings)),
     [tab, setTab] = useState(initialTab),
     [saving, setSaving] = useState(false),
-    [provider, setProvider] = useState<Provider | null>(null);
+    [providerId, setProviderId] = useState(settings.providers[0]?.id || '');
   const [username, setUsername] = useState(''),
     [password, setPassword] = useState(''),
     [loginBusy, setLoginBusy] = useState(false),
     [usage, setUsage] = useState<any[] | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const patch = (p: Partial<Settings>) => setDraft((s) => ({ ...s, ...p }));
+  useEffect(() => {
+    onPreview(draft);
+  }, [draft, onPreview]);
+  const provider = draft.providers.find((p) => p.id === providerId) || draft.providers[0];
   const tabs = [
     { id: 'models', title: '模型连接', icon: Server },
     { id: 'accounts', title: 'Sakta 账号', icon: UserRound },
@@ -76,7 +80,6 @@ export function SettingsPanel({
     }
   }
   function removeProvider(id: string) {
-    if (!confirm('移除这个模型连接？已保存的聊天和作品会保留。')) return;
     patch({
       providers: draft.providers.filter((p) => p.id !== id),
       ...(draft.defaultProvider === id ? { defaultProvider: '', defaultModel: '' } : {}),
@@ -86,36 +89,61 @@ export function SettingsPanel({
     });
   }
   function saveProvider(p: Provider) {
-    const result = providerSchema.safeParse(p);
-    if (!result.success) {
-      notify(result.error.issues[0].message, 'error');
-      return;
-    }
     const providers = draft.providers.some((x) => x.id === p.id)
       ? draft.providers.map((x) => (x.id === p.id ? p : x))
       : [...draft.providers, p];
     const defaults: Partial<Settings> = {};
-    if (p.kind === 'chat' && !draft.defaultProvider) {
+    if (
+      p.kind === 'chat' &&
+      (!draft.defaultProvider ||
+        (draft.defaultProvider === p.id && !p.models.includes(draft.defaultModel)))
+    ) {
       defaults.defaultProvider = p.id;
       defaults.defaultModel = p.models[0] || '';
     }
-    if (p.kind === 'image' && !draft.imageProvider) {
+    if (
+      p.kind === 'image' &&
+      (!draft.imageProvider ||
+        (draft.imageProvider === p.id && !p.models.includes(draft.imageModel)))
+    ) {
       defaults.imageProvider = p.id;
       defaults.imageModel = p.models[0] || '';
     }
-    if (p.kind === 'music' && !draft.musicProvider) {
+    if (
+      p.kind === 'music' &&
+      (!draft.musicProvider ||
+        (draft.musicProvider === p.id && !p.models.includes(draft.musicModel)))
+    ) {
       defaults.musicProvider = p.id;
       defaults.musicModel = p.models[0] || '';
     }
-    if (p.kind === 'speech' && !draft.speechProvider) {
+    if (
+      p.kind === 'speech' &&
+      (!draft.speechProvider ||
+        (draft.speechProvider === p.id && !p.models.includes(draft.speechModel)))
+    ) {
       defaults.speechProvider = p.id;
       defaults.speechModel = p.models[0] || 'tts-1';
     }
+    if (p.kind !== 'chat' && draft.defaultProvider === p.id) {
+      defaults.defaultProvider = '';
+      defaults.defaultModel = '';
+    }
+    if (p.kind !== 'image' && draft.imageProvider === p.id) {
+      defaults.imageProvider = '';
+      defaults.imageModel = '';
+    }
+    if (p.kind !== 'music' && draft.musicProvider === p.id) {
+      defaults.musicProvider = '';
+      defaults.musicModel = '';
+    }
+    if (p.kind !== 'speech' && draft.speechProvider === p.id) {
+      defaults.speechProvider = '';
+    }
     patch({ providers, ...defaults });
-    setProvider(null);
   }
   return (
-    <Modal title="偏好设置" onClose={onClose} wide>
+    <Modal title="偏好设置" onClose={onClose} wide className="settings-dialog">
       <div className="settings-layout">
         <nav className="settings-nav">
           {tabs.map(({ id, title, icon: Icon }) => (
@@ -134,63 +162,70 @@ export function SettingsPanel({
               {title}
             </button>
           ))}
-          <div className="settings-nav-foot">
-            Livra · 灵伴
-            <br />
-            <span>v1.0 · 开源，自由生长</span>
-          </div>
         </nav>
         <div className="settings-content">
           {tab === 'models' && (
             <>
-              <Section title="模型连接">
-                <div className="provider-list">
-                  {draft.providers.map((p) => (
-                    <div className="provider-card" key={p.id}>
-                      <div className="provider-icon">
-                        <Server size={19} />
-                      </div>
-                      <div>
-                        <strong>{p.name}</strong>
-                        <small>
-                          {{ chat: '对话', image: '生图', music: '音乐', speech: '语音' }[p.kind]} ·{' '}
-                          {p.protocol} · {p.models.length} 个模型
-                        </small>
-                      </div>
-                      {p.hasKey || p.apiKey ? (
-                        <Badge color="green">已连接密钥</Badge>
-                      ) : (
-                        <Badge>无密钥</Badge>
-                      )}
-                      <IconButton
-                        label={'编辑 ' + p.name}
-                        onClick={() => setProvider(structuredClone(p))}
+              <Section title="模型连接" description="选择一个连接直接编辑，完成后统一保存设置。">
+                <div className="connections-workspace">
+                  <nav className="connections-list" aria-label="模型连接列表">
+                    {draft.providers.map((p) => (
+                      <button
+                        key={p.id}
+                        aria-current={provider?.id === p.id ? 'true' : undefined}
+                        onClick={() => setProviderId(p.id)}
                       >
-                        <Pencil size={15} />
-                      </IconButton>
-                      <IconButton label={'移除 ' + p.name} onClick={() => removeProvider(p.id)}>
-                        <Trash2 size={15} />
-                      </IconButton>
+                        <span className="connection-monogram">{p.name.slice(0, 1) || 'M'}</span>
+                        <span>
+                          <strong>{p.name || '未命名连接'}</strong>
+                          <small>
+                            {p.models.length} 个模型 · {p.protocol}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
+                    <button
+                      className="connection-add"
+                      onClick={() => {
+                        const next = providerSchema.parse({
+                          id: crypto.randomUUID(),
+                          name: '我的模型服务',
+                          baseUrl: 'https://api.openai.com/v1',
+                        });
+                        patch({ providers: [...draft.providers, next] });
+                        setProviderId(next.id);
+                      }}
+                    >
+                      <Plus size={15} />
+                      添加模型连接
+                    </button>
+                  </nav>
+                  {provider ? (
+                    <div className="connection-detail">
+                      <div className="connection-heading">
+                        <h4>{provider.name || '未命名连接'}</h4>
+                        <IconButton
+                          label={'移除连接 ' + provider.name}
+                          onClick={() => removeProvider(provider.id)}
+                        >
+                          <Trash2 size={15} />
+                        </IconButton>
+                      </div>
+                      <ProviderEditor
+                        key={provider.id}
+                        provider={provider}
+                        onChange={saveProvider}
+                        notify={notify}
+                      />
                     </div>
-                  ))}
+                  ) : (
+                    <div className="connection-empty">
+                      <Server size={26} />
+                      <h4>连接你的模型服务</h4>
+                      <p>从左侧添加连接，填写地址后拉取模型，或手动添加模型 ID。</p>
+                    </div>
+                  )}
                 </div>
-                <Button
-                  className="add-connection"
-                  onClick={() =>
-                    setProvider(
-                      providerSchema.parse({
-                        id: crypto.randomUUID(),
-                        name: '我的模型服务',
-                        baseUrl: 'https://api.openai.com/v1',
-                        apiKey: '',
-                        models: [],
-                      }),
-                    )
-                  }
-                >
-                  <Plus size={16} />
-                  添加模型连接
-                </Button>
               </Section>
               <Section title="默认模型">
                 <div className="form-grid">
@@ -222,13 +257,20 @@ export function SettingsPanel({
               </Section>
               <Section title="Agent 的执行方式">
                 <Field label="需要你的确认时机">
-                  <select
+                  <Select
                     value={draft.toolPermission}
-                    onChange={(e) => patch({ toolPermission: e.target.value as any })}
-                  >
-                    <option value="ask">生成媒体、写入记忆或调用外部工具前询问</option>
-                    <option value="auto">自动执行人偶已启用的工具</option>
-                  </select>
+                    onChange={(value) =>
+                      patch({ toolPermission: value as Settings['toolPermission'] })
+                    }
+                    options={[
+                      {
+                        value: 'ask',
+                        label: '执行前询问',
+                        description: '生成媒体、写入记忆或调用外部工具前，由你确认',
+                      },
+                      { value: 'auto', label: '自动执行', description: '自动执行人偶已启用的工具' },
+                    ]}
+                  />
                 </Field>
                 <p className="setting-note">人偶只会使用你为它启用的工具；执行记录始终可见。</p>
               </Section>
@@ -276,7 +318,7 @@ export function SettingsPanel({
                       setDraft(data.settings);
                       onSettings(data.settings);
                       setPassword('');
-                      notify('Sakta 已连接，可以选择免费模型了');
+                      notify('Sakta 已登录');
                     } catch (e) {
                       notify((e as Error).message, 'error');
                     } finally {
@@ -318,77 +360,20 @@ export function SettingsPanel({
               )}
             </Section>
           )}
-          {tab === 'appearance' && (
-            <>
-              <Section title="显示模式">
-                <div className="theme-options">
-                  {[
-                    { value: 'light', title: '浅色', icon: Sun },
-                    { value: 'dark', title: '深色', icon: Moon },
-                    { value: 'system', title: '跟随系统', icon: Monitor },
-                  ].map(({ value, title, icon: Icon }) => (
-                    <button
-                      key={value}
-                      className={`theme-option ${value} ${draft.theme === value ? 'selected' : ''}`}
-                      onClick={() => patch({ theme: value as any })}
-                    >
-                      <div className="theme-preview">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                      <span>
-                        <Icon size={15} />
-                        {title}
-                        {draft.theme === value && <Check size={14} />}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </Section>
-              <Section title="点缀色">
-                <div className="accent-options">
-                  {[
-                    { value: 'sage', title: '朱砂', color: '#ad4733' },
-                    { value: 'iris', title: '鸢尾紫', color: '#9385ac' },
-                    { value: 'ocean', title: '雾海蓝', color: '#6b8fa5' },
-                    { value: 'rose', title: '玫瑰灰', color: '#b1868f' },
-                  ].map((s) => (
-                    <button
-                      key={s.value}
-                      className={draft.accent === s.value ? 'selected' : ''}
-                      onClick={() => patch({ accent: s.value as any })}
-                    >
-                      <span style={{ background: s.color }}>
-                        {draft.accent === s.value && <Check size={15} />}
-                      </span>
-                      {s.title}
-                    </button>
-                  ))}
-                </div>
-              </Section>
-              <Section title="动效偏好">
-                <Toggle
-                  label="减少动态效果"
-                  description="简化过渡与装饰动画，关闭人偶的鼠标跟随。"
-                  checked={draft.reducedMotion}
-                  onChange={(v) => patch({ reducedMotion: v })}
-                />
-              </Section>
-            </>
-          )}
+          {tab === 'appearance' && <Appearance settings={draft} patch={patch} notify={notify} />}
           {tab === 'language' && (
             <>
               <Section title="语言偏好">
                 <Field label="界面语言">
-                  <select
+                  <Select
                     value={draft.locale}
-                    onChange={(e) => patch({ locale: e.target.value as Settings['locale'] })}
-                  >
-                    <option value="zh-CN">简体中文</option>
-                    <option value="en">English</option>
-                    <option value="ja">日本語</option>
-                  </select>
+                    onChange={(value) => patch({ locale: value as Settings['locale'] })}
+                    options={[
+                      { value: 'zh-CN', label: '简体中文' },
+                      { value: 'en', label: 'English' },
+                      { value: 'ja', label: '日本語' },
+                    ]}
+                  />
                 </Field>
                 <Field
                   label="默认回复语言"
@@ -462,13 +447,16 @@ export function SettingsPanel({
                   {draft.providers.find((p) => p.id === draft.speechProvider)?.protocol ===
                     'fish' && (
                     <Field label="Fish 合成偏好">
-                      <select
+                      <Select
                         value={draft.speechLatency}
-                        onChange={(e) => patch({ speechLatency: e.target.value as any })}
-                      >
-                        <option value="balanced">均衡 · 较低延迟</option>
-                        <option value="normal">音质优先</option>
-                      </select>
+                        onChange={(value) =>
+                          patch({ speechLatency: value as Settings['speechLatency'] })
+                        }
+                        options={[
+                          { value: 'balanced', label: '均衡', description: '较低延迟' },
+                          { value: 'normal', label: '音质优先' },
+                        ]}
+                      />
                     </Field>
                   )}
                 </div>
@@ -487,20 +475,40 @@ export function SettingsPanel({
           {tab === 'search' && (
             <Section title="网页搜索" description="配置服务后，在人偶卡中启用网页搜索。">
               <Field label="搜索服务">
-                <select
+                <Select
                   value={draft.searchEngine}
-                  onChange={(e) => patch({ searchEngine: e.target.value as any })}
-                >
-                  <option value="searxng">SearXNG · 自部署</option>
-                  <option value="tavily">Tavily</option>
-                </select>
+                  onChange={(value) =>
+                    patch({
+                      searchEngine: value as Settings['searchEngine'],
+                      searchUrl:
+                        value === 'anysearch'
+                          ? 'https://api.anysearch.com/v1/search'
+                          : value === 'tavily'
+                            ? 'https://api.tavily.com/search'
+                            : '',
+                      searchKey: '',
+                      hasSearchKey: false,
+                    })
+                  }
+                  options={[
+                    {
+                      value: 'anysearch',
+                      label: 'AnySearch',
+                      description: '官方 REST · 支持匿名搜索',
+                    },
+                    { value: 'searxng', label: 'SearXNG', description: '自部署搜索服务' },
+                    { value: 'tavily', label: 'Tavily' },
+                  ]}
+                />
               </Field>
               <Field
                 label="服务地址"
                 hint={
-                  draft.searchEngine === 'searxng'
-                    ? '例如 https://search.example.com，服务需开启 JSON 输出。'
-                    : '填写完整搜索地址，例如 https://api.tavily.com/search。'
+                  draft.searchEngine === 'anysearch'
+                    ? '默认使用官方 /v1/search，密钥可选。'
+                    : draft.searchEngine === 'searxng'
+                      ? '例如 https://search.example.com，服务需开启 JSON 输出。'
+                      : '填写完整搜索地址，例如 https://api.tavily.com/search。'
                 }
               >
                 <input
@@ -508,15 +516,17 @@ export function SettingsPanel({
                   value={draft.searchUrl}
                   onChange={(e) => patch({ searchUrl: e.target.value })}
                   placeholder={
-                    draft.searchEngine === 'searxng'
-                      ? 'https://search.example.com'
-                      : 'https://api.tavily.com/search'
+                    draft.searchEngine === 'anysearch'
+                      ? 'https://api.anysearch.com/v1/search'
+                      : draft.searchEngine === 'searxng'
+                        ? 'https://search.example.com'
+                        : 'https://api.tavily.com/search'
                   }
                 />
               </Field>
-              {draft.searchEngine === 'tavily' && (
+              {draft.searchEngine !== 'searxng' && (
                 <Field
-                  label="搜索密钥"
+                  label={draft.searchEngine === 'anysearch' ? '搜索密钥（可选）' : '搜索密钥'}
                   hint={draft.hasSearchKey ? '已保存密钥；不编辑则继续使用。' : undefined}
                 >
                   <input
@@ -637,7 +647,13 @@ export function SettingsPanel({
         </div>
       </div>
       <div className="modal-footer">
-        <span className="muted">{tab === 'accounts' ? '账号操作立即生效' : '保存后生效'}</span>
+        <span className="muted">
+          {tab === 'accounts'
+            ? '账号操作立即生效'
+            : tab === 'appearance'
+              ? '正在预览 · 保存后保留'
+              : '保存后生效'}
+        </span>
         <div className="button-row">
           <Button onClick={onClose}>取消</Button>
           <Button variant="primary" busy={saving} onClick={save}>
@@ -645,14 +661,6 @@ export function SettingsPanel({
           </Button>
         </div>
       </div>
-      {provider && (
-        <ProviderEditor
-          provider={provider}
-          onClose={() => setProvider(null)}
-          onSave={saveProvider}
-          notify={notify}
-        />
-      )}
     </Modal>
   );
 }
@@ -671,55 +679,58 @@ function ModelDefault({
   model: string;
   onChange: (id: string, m: string) => void;
 }) {
+  const remote = useSaktaModels(kind === 'chat' ? draft.sakta : undefined);
+  const remoteModels = [
+    ...new Set([...(providerId === 'sakta' && model ? [model] : []), ...remote.models]),
+  ];
   return (
     <Field label={label}>
-      <select
+      <Select
         value={providerId + '|' + model}
-        onChange={(e) => {
-          const [id, ...m] = e.target.value.split('|');
+        onChange={(value) => {
+          const [id, ...m] = value.split('|');
           onChange(id, m.join('|'));
         }}
-      >
-        <option value="|">{kind === 'speech' ? '使用浏览器朗读' : '暂未选择'}</option>
-        {kind === 'chat' && draft.sakta?.connected && (
-          <option value={'sakta|' + (providerId === 'sakta' ? model : '')}>
-            Sakta · {providerId === 'sakta' && model ? model : '登录后在对话中选择'}
-          </option>
-        )}
-        {draft.providers
-          .filter((p) => p.kind === kind)
-          .flatMap((p) =>
-            p.models.map((m) => (
-              <option key={p.id + m} value={p.id + '|' + m}>
-                {p.name} · {m}
-              </option>
-            )),
-          )}
-      </select>
+        searchable
+        loading={remote.loading}
+        error={remote.error}
+        onRetry={remote.connected ? remote.refresh : undefined}
+        options={[
+          { value: '|', label: kind === 'speech' ? '使用浏览器朗读' : '暂未选择' },
+          ...remoteModels.map((m) => ({ value: 'sakta|' + m, label: m, group: 'Sakta' })),
+          ...draft.providers
+            .filter((p) => p.kind === kind)
+            .flatMap((p) =>
+              p.models.map((m) => ({ value: p.id + '|' + m, label: m, group: p.name })),
+            ),
+        ]}
+      />
     </Field>
   );
 }
 function ProviderEditor({
   provider,
-  onClose,
-  onSave,
+  onChange,
   notify,
 }: {
   provider: Provider;
-  onClose: () => void;
-  onSave: (p: Provider) => void;
+  onChange: (p: Provider) => void;
   notify: Notify;
 }) {
   const [p, setP] = useState(provider),
     [modelsText, setModelsText] = useState(provider.models.join('\n')),
     [fetched, setFetched] = useState<string[]>([]),
     [loading, setLoading] = useState(false),
+    [loadError, setLoadError] = useState(''),
     [filter, setFilter] = useState('');
   const patch = (data: Partial<Provider>) => setP((prev) => ({ ...prev, ...data }));
   const selected = modelsText
     .split(/[\n,]+/)
     .map((s) => s.trim())
     .filter(Boolean);
+  useEffect(() => {
+    onChange({ ...p, models: [...new Set(selected)] });
+  }, [p, modelsText]);
   const presets = [
     { name: 'OpenAI 兼容', protocol: 'openai', url: 'https://api.openai.com/v1' },
     { name: 'Anthropic', protocol: 'anthropic', url: 'https://api.anthropic.com/v1' },
@@ -728,8 +739,8 @@ function ProviderEditor({
     { name: 'Fish Audio', protocol: 'fish', url: 'https://api.fish.audio/v1' },
   ];
   return (
-    <Modal title={provider.hasKey ? '编辑模型连接' : '配置模型连接'} onClose={onClose}>
-      <div className="provider-editor modal-body">
+    <section className="provider-editor" aria-label="编辑模型连接">
+      <div>
         <div className="preset-row">
           {presets.map((preset) => (
             <button
@@ -760,39 +771,46 @@ function ProviderEditor({
             <input value={p.name} onChange={(e) => patch({ name: e.target.value })} />
           </Field>
           <Field label="用途">
-            <select
+            <Select
               value={p.kind}
-              onChange={(e) =>
+              onChange={(value) =>
                 patch({
-                  kind: e.target.value as any,
-                  ...((p.protocol === 'fish' && e.target.value !== 'speech') ||
-                  (['music', 'speech'].includes(e.target.value) && p.protocol !== 'fish')
+                  kind: value as Provider['kind'],
+                  ...((p.protocol === 'fish' && value !== 'speech') ||
+                  (['music', 'speech'].includes(value) && p.protocol !== 'fish')
                     ? { protocol: 'openai' as const }
                     : {}),
                 })
               }
-            >
-              <option value="chat">对话 / Agent</option>
-              <option value="image">图像生成</option>
-              <option value="music">音乐生成</option>
-              <option value="speech">语音合成</option>
-            </select>
+              options={[
+                { value: 'chat', label: '对话 / Agent' },
+                { value: 'image', label: '图像生成' },
+                { value: 'music', label: '音乐生成' },
+                { value: 'speech', label: '语音合成' },
+              ]}
+            />
           </Field>
         </div>
         <Field label="接口协议">
-          <select value={p.protocol} onChange={(e) => patch({ protocol: e.target.value as any })}>
-            <option value="openai">OpenAI Chat / Images / Audio 兼容</option>
-            {p.kind === 'speech' && <option value="fish">Fish Audio 原生语音</option>}
-            {p.kind === 'chat' && (
-              <>
-                <option value="responses">OpenAI Responses</option>
-                <option value="anthropic">Anthropic Messages</option>
-              </>
-            )}
-            {['chat', 'image'].includes(p.kind) && (
-              <option value="gemini">Google Gemini 原生</option>
-            )}
-          </select>
+          <Select
+            value={p.protocol}
+            onChange={(value) => patch({ protocol: value as Provider['protocol'] })}
+            options={[
+              { value: 'openai', label: 'OpenAI 兼容', description: 'Chat / Images / Audio' },
+              ...(p.kind === 'speech'
+                ? [{ value: 'fish', label: 'Fish Audio', description: '原生语音' }]
+                : []),
+              ...(p.kind === 'chat'
+                ? [
+                    { value: 'responses', label: 'OpenAI Responses' },
+                    { value: 'anthropic', label: 'Anthropic Messages' },
+                  ]
+                : []),
+              ...(['chat', 'image'].includes(p.kind)
+                ? [{ value: 'gemini', label: 'Google Gemini', description: '原生接口' }]
+                : []),
+            ]}
+          />
         </Field>
         <Field
           label="服务地址 Base URL"
@@ -827,6 +845,7 @@ function ProviderEditor({
             busy={loading}
             onClick={async () => {
               setLoading(true);
+              setLoadError('');
               try {
                 const data = await post('/providers/models', {
                   provider: { ...p, models: selected },
@@ -838,7 +857,7 @@ function ProviderEditor({
                     : `已获取 ${data.models.length} 个模型，勾选需要使用的模型`,
                 );
               } catch (e) {
-                notify((e as Error).message, 'error');
+                setLoadError((e as Error).message);
               } finally {
                 setLoading(false);
               }
@@ -848,6 +867,12 @@ function ProviderEditor({
             {p.protocol === 'fish' ? '查看内置型号' : '拉取模型'}
           </Button>
         </div>
+        {loading && !fetched.length && <ModelSkeleton />}
+        {loadError && (
+          <p className="error-box" role="alert">
+            {loadError}，可重新拉取；已选模型会保留。
+          </p>
+        )}
         {fetched.length > 0 && (
           <div className="model-picker">
             <div>
@@ -900,6 +925,28 @@ function ProviderEditor({
             }
           />
         </Field>
+        {p.kind === 'chat' && selected.length > 0 && (
+          <details className="context-window-fields">
+            <summary>上下文容量（可选）</summary>
+            {selected.map((m) => (
+              <Field label={m} key={m}>
+                <input
+                  type="number"
+                  min="256"
+                  max="10000000"
+                  placeholder="以服务商公布的 token 上限为准"
+                  value={p.contextWindows?.[m] || ''}
+                  onChange={(e) => {
+                    const windows = { ...p.contextWindows };
+                    if (e.target.value) windows[m] = Number(e.target.value);
+                    else delete windows[m];
+                    patch({ contextWindows: windows });
+                  }}
+                />
+              </Field>
+            ))}
+          </details>
+        )}
         {p.protocol === 'fish' && (
           <p className="info-box">
             推荐 s2.1-pro。s2.1-pro-free 可用于账号允许的测试额度。音色在「声音」或人偶卡中填写
@@ -913,18 +960,9 @@ function ProviderEditor({
           </p>
         )}
       </div>
-      <div className="modal-footer">
-        <span className="muted">已选 {selected.length} 个模型</span>
-        <div className="button-row">
-          <Button onClick={onClose}>取消</Button>
-          <Button
-            variant="primary"
-            onClick={() => onSave({ ...p, models: [...new Set(selected)] })}
-          >
-            确认连接
-          </Button>
-        </div>
-      </div>
-    </Modal>
+      <p className="connection-selection-count" role="status">
+        已选 {new Set(selected).size} 个模型
+      </p>
+    </section>
   );
 }
