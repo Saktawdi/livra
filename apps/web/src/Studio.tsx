@@ -21,7 +21,7 @@ import {
 import type { Artifact, Settings } from '@livra/shared';
 import { applyMarpTheme, marpThemeName } from '@livra/shared';
 import { api, post, download, readAttachment } from './api';
-import { PageIntro, Field, Button, IconButton, Badge, Modal, Select } from './ui';
+import { Field, Button, IconButton, Badge, Modal, Select } from './ui';
 import type { Notify } from './App';
 import { useSessionState } from './useSessionState';
 import './studio.css';
@@ -226,32 +226,24 @@ export function Studio({
       name: '图像',
       icon: Image,
       title: '让脑海里的画面，成为作品。',
-      caption: '从一句灵感开始，描绘属于你的画面。',
-      label: '图像创作',
     },
     {
       id: 'music',
       name: '音乐',
       icon: Music2,
       title: '给此刻的灵感，一段旋律。',
-      caption: '写下情绪、曲风与乐器，让想法被听见。',
-      label: '音乐创作',
     },
     {
       id: 'slides',
       name: '演示文稿',
       icon: Presentation,
       title: '把一个好想法，讲得更清楚。',
-      caption: '在左侧编写内容，右侧即时呈现。',
-      label: '演示编辑',
     },
     {
       id: 'theme',
       name: 'Marp 主题',
       icon: Palette,
       title: '为你的表达，定下自己的风格。',
-      caption: '调整配色与排版，保存为可反复使用的主题。',
-      label: '主题设计',
     },
   ];
   const currentTab = tabs.find((item) => item.id === tab) || tabs[0];
@@ -275,18 +267,6 @@ export function Studio({
         }
       }}
     >
-      <PageIntro
-        eyebrow="LIVRA / CREATIVE SPACE"
-        title="工作室"
-        description={currentTab.caption}
-        action={
-          <Button variant="ghost" onClick={askAgent} disabled={busy}>
-            <Sparkles size={15} />
-            和伙伴一起创作
-            <ArrowUpRight size={14} />
-          </Button>
-        }
-      />
       <div className="studio-navigation">
         <div className="studio-tabs" role="tablist" aria-label="创作类型">
           {tabs.map(({ id, name, icon: Icon }) => (
@@ -321,10 +301,17 @@ export function Studio({
             </button>
           ))}
         </div>
-        <span className="studio-draft-note">
-          <Check size={12} />
-          草稿自动保留
-        </span>
+        <div className="studio-navigation-actions">
+          <span className="studio-draft-note">
+            <Check size={12} />
+            草稿自动保留
+          </span>
+          <Button variant="ghost" onClick={askAgent} disabled={busy}>
+            <Sparkles size={15} />
+            和伙伴一起创作
+            <ArrowUpRight size={14} />
+          </Button>
+        </div>
       </div>
       <div
         className={'studio-workbench ' + (['slides', 'theme'].includes(tab) ? 'editor-mode' : '')}
@@ -333,21 +320,6 @@ export function Studio({
         aria-labelledby={'studio-tab-' + currentTab.id}
       >
         <div className="studio-controls">
-          <div className="studio-panel-intro">
-            <span className="studio-panel-icon">
-              <currentTab.icon size={18} />
-            </span>
-            <div>
-              <h2>{currentTab.label}</h2>
-              <p>
-                {tab === 'image'
-                  ? '描述、参考与画面设置'
-                  : tab === 'music'
-                    ? '灵感、歌词与声音设置'
-                    : '编辑源文件，实时查看效果'}
-              </p>
-            </div>
-          </div>
           {['image', 'music'].includes(tab) ? (
             <>
               <Field label={tab === 'image' ? '画面描述' : '音乐灵感'}>
