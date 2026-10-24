@@ -1243,21 +1243,6 @@ kbd {
   color: var(--accent);
   font-size: 13px;
 }
-.presence-bubble {
-  position: absolute;
-  bottom: 24px;
-  left: 18px;
-  right: 18px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px;
-  font-size: 13px;
-  line-height: 1.6;
-  text-align: center;
-  z-index: 2;
-  animation: appear 180ms ease-out;
-}
 .presence-actions {
   display: flex;
   align-items: center;
@@ -1305,36 +1290,6 @@ kbd {
   margin-left: auto;
   font-size: 12px;
   color: var(--muted);
-}
-.focus-clock {
-  position: absolute;
-  bottom: 14px;
-  left: 12px;
-  right: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 8px 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 3;
-  box-shadow: 0 3px 16px #28271f0a;
-}
-.focus-clock > span {
-  font-size: 12px;
-  color: var(--muted);
-}
-.focus-clock strong {
-  font-size: 24px;
-  font-weight: 500;
-  letter-spacing: 1px;
-  font-variant-numeric: tabular-nums;
-  flex: 1;
-}
-.focus-clock .icon-button {
-  width: 30px;
-  height: 32px;
 }
 .presence-panel.work .presence-stage {
   height: 225px;

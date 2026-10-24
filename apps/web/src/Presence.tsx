@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Hand,
-  Timer,
   X,
-  Play,
-  Pause,
   Volume2,
   VolumeX,
   ChevronDown,
@@ -21,7 +17,6 @@ import {
   MoveUpRight,
 } from 'lucide-react';
 import type { Conversation, LiveState, Memory, Mood, Persona, Settings } from '@livra/shared';
-import { useFocus } from './useFocus';
 import { LiveAvatar } from './LiveAvatar';
 import { api, post } from './api';
 import { IconButton, Button, Modal, Field } from './ui';
@@ -59,7 +54,6 @@ export function Presence({
   const [choosing, setChoosing] = useState(false),
     [tab, setTab] = useState('activity'),
     [localMood, setLocalMood] = useState<Mood | null>(null),
-    [greeting, setGreeting] = useState(false),
     [memoryOpen, setMemoryOpen] = useState(false),
     [memories, setMemories] = useState<Memory[]>([]),
     [memory, setMemory] = useState('');
@@ -71,15 +65,13 @@ export function Presence({
     const timer = setTimeout(() => setGesture({ id: Date.now(), key: 'reset' }), 4500);
     return () => clearTimeout(timer);
   }, [gesture]);
-  const { remaining, timerOn, timerVisible, start, toggle, end } = useFocus(notify);
   useEffect(() => {
     if (!localMood) return;
     const id = setTimeout(() => {
       setLocalMood(null);
-      setGreeting(false);
     }, 3500);
     return () => clearTimeout(id);
-  }, [localMood, greeting]);
+  }, [localMood]);
   const tools = conversation?.messages.flatMap((m) => m.tools || []) || [];
   const artifacts = tools.map((t) => t.result as any).filter((r) => r?.artifactId);
   const activity = tools.findLast((t) => t.status === 'running')?.name;
@@ -101,7 +93,6 @@ export function Presence({
     if (working) return;
     setLocalMood(localMood === 'happy' ? 'excited' : 'happy');
     setGesture({ id: Date.now(), key: 'greet' });
-    setGreeting(true);
   }
   async function openMemory() {
     setMemoryOpen(true);
@@ -166,38 +157,8 @@ export function Presence({
             !lastReply.interrupted
           }
         />
-        {greeting && (
-          <div className="presence-bubble" role="status">
-            {persona.name}向你打了个招呼。
-          </div>
-        )}
-        {timerVisible && (
-          <div className="focus-clock">
-            <span>专注</span>
-            <strong>
-              {Math.floor(remaining / 60)
-                .toString()
-                .padStart(2, '0')}
-              :{(remaining % 60).toString().padStart(2, '0')}
-            </strong>
-            <IconButton label={timerOn ? '暂停专注' : '继续专注'} onClick={toggle}>
-              {timerOn ? <Pause size={16} /> : <Play size={16} />}
-            </IconButton>
-            <IconButton label="结束专注" onClick={end}>
-              <X size={16} />
-            </IconButton>
-          </div>
-        )}
       </div>
       <div className="presence-actions">
-        <button onClick={wave} disabled={working}>
-          <Hand size={17} />
-          打个招呼
-        </button>
-        <button aria-pressed={timerVisible} onClick={start}>
-          <Timer size={17} />
-          专注 25 分钟
-        </button>
         <button onClick={() => setActionsOpen((v) => !v)} aria-expanded={actionsOpen}>
           <Sparkles size={17} />
           互动
