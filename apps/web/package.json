@@ -1,0 +1,23 @@
+{
+  "name": "@livra/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5180",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@livra/shared": "*",
+    "dompurify": "^3.2.6",
+    "lucide-react": "^0.468.0",
+    "marked": "^15.0.12",
+    "pixi.js": "^6.5.10",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "vite": "^7.3.1"
+  }
+}

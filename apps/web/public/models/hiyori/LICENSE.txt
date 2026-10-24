@@ -1,0 +1,5 @@
+Hiyori — © Live2D Inc.
+Official sample from Live2D/CubismWebSamples, tag 4-r.1.
+Free Material License: https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html
+Sample model terms: https://www.live2d.com/eula/live2d-sample-model-terms_en.html
+These assets are not covered by Livra's MIT license.

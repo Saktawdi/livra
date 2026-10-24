@@ -1,0 +1,522 @@
+import { randomUUID } from 'node:crypto';
+import { Marp } from '@marp-team/marp-core';
+import { z } from 'zod';
+import Ajv from 'ajv';
+import {
+  moodSchema,
+  personaSchema,
+  liveSchema,
+  speechLanguageSchema,
+  type Settings,
+  type Persona,
+  type Artifact,
+  type AgentEvent,
+  type ToolInfo,
+} from '@livra/shared';
+import type { Store } from './store.ts';
+import { network, endpoint, readJson, safeError } from './network.ts';
+import type { FunctionTool } from './providers.ts';
+
+export type Context = {
+  store: Store;
+  workspace: string;
+  settings: Settings;
+  persona: Persona;
+  signal: AbortSignal;
+  emit: (event: AgentEvent) => void;
+  approve?: (name: string, args: any) => Promise<boolean>;
+};
+type Registered = ToolInfo & {
+  schema?: z.ZodTypeAny;
+  approval?: boolean;
+  execute: (args: any, ctx: Context) => Promise<any>;
+};
+const object = (properties: Record<string, any>, required: string[] = []) => ({
+  type: 'object',
+  properties,
+  required,
+  additionalProperties: false,
+});
+const text = (description: string, maxLength = 16000) => ({
+  type: 'string',
+  description,
+  maxLength,
+});
+export const builtInNames = [
+  'list_tools',
+  'set_emotion',
+  'remember',
+  'web_search',
+  'generate_image',
+  'generate_music',
+  'create_slides',
+  'create_marp_theme',
+  'create_persona',
+];
+
+function artifact(ctx: Context, kind: Artifact['kind'], title: string, data: Artifact['data']) {
+  const result: Artifact = { id: randomUUID(), kind, title, created: Date.now(), data };
+  const images = data.images?.map(
+    (_: unknown, index: number) => `/api/artifacts/${result.id}/media/${index}`,
+  );
+  const audio = data.audio ? `/api/artifacts/${result.id}/media/0` : undefined;
+  ctx.store.put(ctx.workspace, 'artifact', result);
+  ctx.emit({
+    type: 'artifact',
+    artifact: { ...result, data: { ...data, images, audio, html: undefined } },
+  });
+  return {
+    artifactId: result.id,
+    kind,
+    title,
+    ...(images ? { images } : {}),
+    ...(audio ? { audio } : {}),
+    ...(kind === 'persona' ? { persona: data.persona } : {}),
+  };
+}
+async function media(url: string, signal: AbortSignal, kind: 'image' | 'audio'): Promise<string> {
+  if (url.startsWith('data:')) {
+    if (
+      !new RegExp(
+        `^data:${kind === 'image' ? 'image/(?:png|jpeg|webp|gif)' : 'audio/[a-zA-Z0-9.+-]+'};base64,[a-zA-Z0-9+/=\\r\\n]+$`,
+      ).test(url) ||
+      url.length > 45_000_000
+    )
+      throw Error('服务返回的媒体格式不受支持');
+    return url;
+  }
+  const response = await network(url, { signal });
+  if (!response.ok) throw Error(`下载媒体失败（HTTP ${response.status}）`);
+  const mime = response.headers.get('content-type')?.split(';')[0] || '';
+  if (!mime.startsWith(kind + '/') || mime === 'image/svg+xml')
+    throw Error('服务返回的媒体类型不受支持');
+  const reader = response.body!.getReader();
+  let count = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      count += value.length;
+      if (count > 32_000_000) throw Error('媒体超过 32 MB 限制');
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return `data:${mime};base64,${Buffer.concat(chunks).toString('base64')}`;
+}
+export function renderSlides(markdown: string, theme?: string) {
+  const marp = new Marp({ html: false, math: false });
+  if (theme) {
+    if (/@import|url\s*\(|<\/?(?:script|style)|expression\s*\(/i.test(theme))
+      throw Error('主题只能包含本地 CSS 样式');
+    // Keep readable slide typography when a generated theme only changes colors or layout.
+    marp.themeSet.add(`@import "default";\n${theme}`);
+  }
+  const rendered = marp.render(markdown);
+  const css = rendered.css.replace(/<\/style/gi, '');
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: https: http:; font-src data:"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}\nhtml{background:#20221f}body{margin:0;padding:24px;display:grid;gap:24px}svg[data-marpit-svg]{width:100%;height:auto;max-height:90vh} @media print{body{padding:0;gap:0}svg[data-marpit-svg]{break-after:page;max-height:none}}</style></head><body>${rendered.html}</body></html>`;
+}
+export function registry(ctx: Context): Map<string, Registered> {
+  const map = new Map<string, Registered>();
+  const add = (tool: Omit<Registered, 'available'> & { available?: boolean }) =>
+    map.set(tool.name, { available: true, ...tool });
+  add({
+    name: 'list_tools',
+    title: '发现工具',
+    description: '列出当前人偶可使用的工具及实际可用状态。',
+    category: 'agent',
+    inputSchema: object({}),
+    schema: z.object({}),
+    execute: async () =>
+      [...map.values()]
+        .filter((t) => allowed(ctx, t.name))
+        .map(({ execute, schema, approval, ...t }) => t),
+  });
+  add({
+    name: 'set_emotion',
+    title: '表达情绪',
+    description: '用结构化情绪驱动 Live2D 表情，不改变回复内容。',
+    category: 'live',
+    inputSchema: object({ mood: { type: 'string', enum: moodSchema.options } }, ['mood']),
+    schema: z.object({ mood: moodSchema }),
+    execute: async (args) => {
+      ctx.emit({ type: 'emotion', mood: args.mood });
+      return { mood: args.mood };
+    },
+  });
+  add({
+    name: 'remember',
+    title: '记住一件事',
+    description: '用户明确要求或同意后，将一条偏好或事实记入当前人偶的长期记忆。',
+    category: 'live',
+    inputSchema: object({ content: text('待保存的简短事实或偏好', 600) }, ['content']),
+    schema: z.object({ content: z.string().min(1).max(600) }),
+    approval: true,
+    execute: async ({ content }) =>
+      ctx.store.put(ctx.workspace, 'memory', {
+        id: randomUUID(),
+        personaId: ctx.persona.id,
+        content,
+        created: Date.now(),
+      }),
+  });
+  add({
+    name: 'web_search',
+    title: '网页搜索',
+    description: '搜索网络信息，返回标题、摘要和来源链接。',
+    category: 'research',
+    inputSchema: object({ query: text('搜索词', 500) }, ['query']),
+    schema: z.object({ query: z.string().min(1).max(500) }),
+    available: !!(ctx.settings.searchUrl || process.env.SEARXNG_URL),
+    execute: async ({ query }) => {
+      const base = ctx.settings.searchUrl || process.env.SEARXNG_URL!;
+      let data;
+      if (ctx.settings.searchEngine === 'tavily')
+        data = await readJson(
+          await network(base, {
+            method: 'POST',
+            signal: ctx.signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: ctx.settings.searchKey, query, max_results: 6 }),
+          }),
+        );
+      else {
+        const url = new URL(endpoint(base, 'search'));
+        url.searchParams.set('q', query);
+        url.searchParams.set('format', 'json');
+        data = await readJson(await network(url.href, { signal: ctx.signal }));
+      }
+      return (data.results || []).slice(0, 6).map((r: any) => ({
+        title: r.title,
+        url: r.url,
+        content: String(r.content || r.snippet || '').slice(0, 3000),
+      }));
+    },
+  });
+  add({
+    name: 'create_slides',
+    title: 'Marp 演示文稿',
+    description:
+      '把完整 Marp Markdown 变为可预览、下载、打印为 PDF 的演示文稿。用 --- 分页，支持自定义 CSS 主题。',
+    category: 'create',
+    inputSchema: object(
+      {
+        title: text('标题', 120),
+        markdown: text('完整 Marp Markdown', 100000),
+        theme: text('可选的 Marp 主题 CSS（含 @theme 名称）', 20000),
+      },
+      ['title', 'markdown'],
+    ),
+    schema: z.object({
+      title: z.string().min(1).max(120),
+      markdown: z.string().min(1).max(100000),
+      theme: z.string().max(20000).optional(),
+    }),
+    execute: async ({ title, markdown, theme }) => {
+      const html = renderSlides(markdown, theme);
+      return artifact(ctx, 'slides', title, { markdown, theme, html });
+    },
+  });
+  add({
+    name: 'create_marp_theme',
+    title: '设计 Marp 主题',
+    description:
+      '保存 AI 设计的 Marp CSS 主题，供演示文稿复用。CSS 必须包含 /* @theme name */，禁止外部资源。',
+    category: 'create',
+    inputSchema: object(
+      {
+        name: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,40}$' },
+        css: text('完整 Marp 主题 CSS', 20000),
+      },
+      ['name', 'css'],
+    ),
+    schema: z.object({
+      name: z.string().regex(/^[a-z][a-z0-9-]{0,40}$/),
+      css: z.string().min(1).max(20000),
+    }),
+    execute: async ({ name, css }) => {
+      const clean = css.replace(/\/\*\s*@theme\s+[^*]*\*\//g, '');
+      const theme = `/* @theme ${name} */\n${clean}`;
+      renderSlides(`---\ntheme: ${name}\n---\n# ${name}`, theme);
+      return artifact(ctx, 'theme', name, { css: theme });
+    },
+  });
+  const personaInput = z.object({
+    name: z.string().min(1).max(50),
+    description: z.string().max(1500),
+    systemPrompt: z.string().min(1).max(16000),
+    mode: z.enum(['companion', 'work']),
+    language: z.string().max(100).optional(),
+    greeting: z.string().max(1000).optional(),
+    voice: z.string().max(200).optional(),
+    voiceLanguage: speechLanguageSchema.optional(),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional(),
+    tools: z.array(z.string().max(64)).max(50).optional(),
+    live: liveSchema.partial().optional(),
+  });
+  add({
+    name: 'create_persona',
+    title: '创造新伙伴',
+    description:
+      '生成人偶卡作品，用户预览后安装。可设计人格、语言、音色、工具和 Live2D 参数。内置模型 /models/hiyori/Hiyori.model3.json 与 /models/haru/Haru.model3.json；不会生成新的 Live2D 模型文件。',
+    category: 'live',
+    inputSchema: z.toJSONSchema(personaInput) as Record<string, any>,
+    schema: personaInput,
+    execute: async (args) => {
+      const persona = personaSchema.parse({
+        ...ctx.persona,
+        ...args,
+        id: randomUUID(),
+        subtitle: args.description.slice(0, 60),
+        greeting: args.greeting || `你好，我是${args.name}。`,
+        live: { ...ctx.persona.live, ...args.live },
+        tools:
+          args.tools ||
+          (args.mode === 'work' ? builtInNames : ['set_emotion', 'remember', 'list_tools']),
+      });
+      return artifact(ctx, 'persona', persona.name, { persona });
+    },
+  });
+  const imageProvider = ctx.settings.providers.find(
+    (p) => p.id === ctx.settings.imageProvider && p.kind === 'image',
+  );
+  add({
+    name: 'generate_image',
+    title: '生成图像',
+    description: '使用已配置的图像模型生成图片。参考图使用 image 参数传入 data URL，可选。',
+    category: 'create',
+    approval: true,
+    available: !!(imageProvider && ctx.settings.imageModel),
+    inputSchema: object(
+      {
+        prompt: text('完整图像描述', 12000),
+        size: { type: 'string', enum: ['1024x1024', '1536x1024', '1024x1536'] },
+        image: text('可选的参考图片 data URL', 12000000),
+      },
+      ['prompt'],
+    ),
+    schema: z.object({
+      prompt: z.string().min(1).max(12000),
+      size: z.enum(['1024x1024', '1536x1024', '1024x1536']).default('1024x1024'),
+      image: z.string().max(12000000).optional(),
+    }),
+    execute: async ({ prompt, size, image }) => {
+      if (!imageProvider) throw Error('请先连接生图服务');
+      let images: string[] = [];
+      if (imageProvider.protocol === 'gemini') {
+        const parts: any[] = [{ text: prompt }];
+        if (image) {
+          const match = /^data:(image\/[^;]+);base64,(.+)$/.exec(image);
+          if (!match) throw Error('参考图格式无效');
+          parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+        }
+        const data = await readJson(
+          await network(
+            endpoint(
+              imageProvider.baseUrl,
+              `models/${encodeURIComponent(ctx.settings.imageModel)}:generateContent`,
+            ),
+            {
+              method: 'POST',
+              signal: ctx.signal,
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': imageProvider.apiKey || '',
+              },
+              body: JSON.stringify({
+                contents: [{ parts }],
+                generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+              }),
+            },
+          ),
+          48_000_000,
+        );
+        for (const part of data.candidates?.[0]?.content?.parts || [])
+          if (part.inlineData)
+            images.push(
+              await media(
+                `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
+                ctx.signal,
+                'image',
+              ),
+            );
+      } else {
+        let body: BodyInit;
+        let path = 'images/generations';
+        const headers: Record<string, string> = {
+          ...(imageProvider.apiKey ? { Authorization: `Bearer ${imageProvider.apiKey}` } : {}),
+        };
+        if (image) {
+          path = 'images/edits';
+          const match = /^data:(image\/[^;]+);base64,(.+)$/.exec(image);
+          if (!match) throw Error('参考图格式无效');
+          const form = new FormData();
+          form.set('model', ctx.settings.imageModel);
+          form.set('prompt', prompt);
+          form.set('size', size);
+          form.set('n', '1');
+          form.set(
+            'image',
+            new Blob([Buffer.from(match[2], 'base64')], { type: match[1] }),
+            'reference.png',
+          );
+          body = form;
+        } else {
+          headers['Content-Type'] = 'application/json';
+          body = JSON.stringify({ model: ctx.settings.imageModel, prompt, size, n: 1 });
+        }
+        const data = await readJson(
+          await network(endpoint(imageProvider.baseUrl, path), {
+            method: 'POST',
+            signal: ctx.signal,
+            headers,
+            body,
+          }),
+          48_000_000,
+        );
+        for (const entry of (data.data || []).slice(0, 4))
+          images.push(
+            await media(
+              entry.b64_json ? `data:image/png;base64,${entry.b64_json}` : entry.url,
+              ctx.signal,
+              'image',
+            ),
+          );
+      }
+      if (!images.length) throw Error('服务未返回图片，请检查模型是否支持生图');
+      return artifact(ctx, 'image', prompt.slice(0, 50), {
+        prompt,
+        size,
+        model: ctx.settings.imageModel,
+        images,
+      });
+    },
+  });
+  const musicProvider = ctx.settings.providers.find(
+    (p) => p.id === ctx.settings.musicProvider && p.kind === 'music',
+  );
+  add({
+    name: 'generate_music',
+    title: '生成音乐',
+    description:
+      '调用音乐服务生成音频。兼容 POST audio/generations 的同步音频服务；不宣称通用 Suno 支持。',
+    category: 'create',
+    approval: true,
+    available: !!(musicProvider && ctx.settings.musicModel),
+    inputSchema: object(
+      {
+        prompt: text('曲风、乐器、情绪和编排', 8000),
+        lyrics: text('可选歌词', 8000),
+        duration: { type: 'integer', minimum: 5, maximum: 180 },
+      },
+      ['prompt'],
+    ),
+    schema: z.object({
+      prompt: z.string().min(1).max(8000),
+      lyrics: z.string().max(8000).optional(),
+      duration: z.number().int().min(5).max(180).default(30),
+    }),
+    execute: async ({ prompt, lyrics, duration }) => {
+      if (!musicProvider) throw Error('请先连接音乐服务');
+      const data = await readJson(
+        await network(endpoint(musicProvider.baseUrl, 'audio/generations'), {
+          method: 'POST',
+          signal: ctx.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(musicProvider.apiKey ? { Authorization: `Bearer ${musicProvider.apiKey}` } : {}),
+          },
+          body: JSON.stringify({ model: ctx.settings.musicModel, prompt, lyrics, duration }),
+        }),
+        48_000_000,
+      );
+      const entry = data.data?.[0] || data;
+      const url =
+        entry.audio_url ||
+        entry.url ||
+        (entry.b64_json ? `data:audio/mpeg;base64,${entry.b64_json}` : '');
+      if (!url) throw Error('服务未返回音频。此适配要求同步返回 audio_url/url/b64_json');
+      const audio = await media(url, ctx.signal, 'audio');
+      return artifact(ctx, 'music', prompt.slice(0, 50), {
+        prompt,
+        lyrics,
+        duration,
+        model: ctx.settings.musicModel,
+        audio,
+      });
+    },
+  });
+  for (const custom of ctx.settings.customTools.filter((t) => t.enabled)) {
+    if (map.has(custom.name)) continue;
+    add({
+      name: custom.name,
+      title: custom.title,
+      description: custom.description,
+      inputSchema: custom.inputSchema,
+      category: 'custom',
+      available: true,
+      approval: true,
+      execute: async (args) => {
+        const ajv = new Ajv({ strict: false, allErrors: false });
+        const validate = ajv.compile(custom.inputSchema);
+        if (!validate(args)) throw Error('工具参数不符合注册时的 JSON Schema');
+        return readJson(
+          await network(custom.endpoint, {
+            method: 'POST',
+            signal: ctx.signal,
+            headers: {
+              'Content-Type': 'application/json',
+              ...(custom.apiKey ? { Authorization: `Bearer ${custom.apiKey}` } : {}),
+            },
+            body: JSON.stringify(args),
+          }),
+          1_000_000,
+        );
+      },
+    });
+  }
+  return map;
+}
+const allowed = (ctx: Context, name: string) =>
+  name === 'list_tools' || ctx.persona.tools.includes(name);
+export function toolList(ctx: Context): ToolInfo[] {
+  return [...registry(ctx).values()].map(({ execute, schema, approval, ...t }) => t);
+}
+export function functionTools(ctx: Context): FunctionTool[] {
+  return [...registry(ctx).values()]
+    .filter((t) => t.available && allowed(ctx, t.name))
+    .map((t) => ({
+      type: 'function',
+      function: { name: t.name, description: t.description, parameters: t.inputSchema },
+    }));
+}
+export async function executeTool(name: string, args: unknown, ctx: Context, manual = false) {
+  const tool = registry(ctx).get(name);
+  if (!tool || !tool.available || (!manual && !allowed(ctx, name)))
+    throw Error('工具不可用或未对当前人偶开放');
+  const parsed = tool.schema ? tool.schema.parse(args) : args;
+  if (!manual && tool.approval && ctx.settings.toolPermission === 'ask') {
+    if (!ctx.approve || !(await ctx.approve(name, parsed)))
+      return {
+        declined: true,
+        message: '用户未允许这次工具调用，请继续沟通，不要再次执行同一操作。',
+      };
+  }
+  try {
+    return await tool.execute(parsed, ctx);
+  } catch (error) {
+    throw Error(
+      safeError(error, [
+        ...ctx.settings.providers.map((p) => p.apiKey),
+        ...ctx.settings.customTools.map((t) => t.apiKey),
+        ctx.settings.searchKey,
+        ctx.settings.sakta?.token,
+      ]),
+    );
+  }
+}

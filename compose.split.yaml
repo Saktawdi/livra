@@ -1,0 +1,30 @@
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3400
+      DATA_DIR: /app/data
+      TRUST_PROXY: uniquelocal
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
+      SAKTA_BASE_URL: ${SAKTA_BASE_URL-https://api.sakta.top}
+      SEARXNG_URL: ${SEARXNG_URL:-}
+      ALLOW_PRIVATE_ENDPOINTS: ${ALLOW_PRIVATE_ENDPOINTS:-false}
+    volumes:
+      - livra-data:/app/data
+    restart: unless-stopped
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "127.0.0.1:5180:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  livra-data:

@@ -1,0 +1,35 @@
+name: Livra checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run check
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+      - run: docker build -t livra:check .
+      - name: Verify production runtime
+        run: |
+          docker run -d --name livra-check -p 127.0.0.1:3400:3400 livra:check
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3400/api/health; then break; fi
+            sleep 2
+          done
+          node scripts/smoke.mjs http://127.0.0.1:3400
+      - name: Container diagnostics
+        if: failure()
+        run: docker logs livra-check
+      - name: Clean up container
+        if: always()
+        run: docker rm -f livra-check || true

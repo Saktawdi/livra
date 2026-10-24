@@ -1,69 +1,38 @@
 {
-  "name": "ai_tools",
-  "version": "0.6.8",
+  "name": "livra",
+  "version": "1.0.0",
   "private": true,
-  "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint"
+  "type": "module",
+  "description": "Live companions. Capable agents. Your own space.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
   },
-  "dependencies": {
-    "@babel/runtime": "7.0.0-beta.46",
-    "@kangc/v-md-editor": "^2.3.18",
-    "babel-runtime": "^6.26.0",
-    "core-js": "^3.8.3",
-    "pdfjs-dist": "^2.5.207",
-    "pixi.js": "^6.4.2",
-    "vue": "^3.2.13",
-    "vue-router": "^4.0.3",
-    "vuex": "^4.0.0"
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm run dev -w @livra/server\" \"npm run dev -w @livra/web\"",
+    "build": "npm run build -w @livra/web && npm run build -w @livra/server",
+    "start": "npm run start -w @livra/server",
+    "check": "tsc --noEmit && npm test",
+    "format": "prettier --write \"apps/*/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/*.mjs\"",
+    "format:check": "prettier --check \"apps/*/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/*.mjs\"",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "setup:live2d": "node scripts/setup-live2d.mjs"
   },
   "devDependencies": {
-    "@babel/core": "^7.12.16",
-    "@babel/eslint-parser": "^7.12.16",
-    "@babel/plugin-transform-private-methods": "^7.23.3",
-    "@marp-team/marp-core": "^3.8.0",
-    "@marp-team/marpit": "^2.5.0",
-    "@sweetalert2/theme-bootstrap-4": "^5.0.15",
-    "@vue/cli-plugin-babel": "~5.0.0",
-    "@vue/cli-plugin-eslint": "~5.0.0",
-    "@vue/cli-plugin-router": "~5.0.0",
-    "@vue/cli-plugin-vuex": "~5.0.0",
-    "@vue/cli-service": "~5.0.0",
-    "axios": "^1.4.0",
-    "clipboardy": "^3.0.0",
-    "eslint": "^7.32.0",
-    "eslint-plugin-vue": "^8.0.3",
-    "eventsource-parser": "^1.0.0",
-    "html2canvas": "^1.4.1",
-    "less-loader": "^11.1.3",
-    "pixi-live2d-display": "^0.4.0",
-    "pptxgenjs": "^3.12.0",
-    "sweetalert2": "^11.7.27",
-    "ts-loader": "^9.4.4",
-    "util": "^0.12.5",
-    "uuid": "^9.0.0",
-    "vue-github-button": "^3.1.0",
-    "wavesurfer.js": "^7.2.0"
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "concurrently": "^9.2.1",
+    "esbuild": "^0.25.12",
+    "prettier": "3.9.10",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
   },
-  "eslintConfig": {
-    "root": true,
-    "env": {
-      "node": true
-    },
-    "extends": [
-      "plugin:vue/vue3-essential",
-      "eslint:recommended"
-    ],
-    "parserOptions": {
-      "parser": "@babel/eslint-parser"
-    },
-    "rules": {}
-  },
-  "browserslist": [
-    "> 1%",
-    "last 2 versions",
-    "not dead",
-    "not ie 11"
-  ]
+  "overrides": {
+    "katex": "^0.19.1"
+  }
 }
