@@ -303,7 +303,7 @@ export function Gallery({
                 <Button
                   onClick={() => download(detail.title + '.html', detail.data.html, 'text/html')}
                 >
-                导出 HTML
+                  导出 HTML
                 </Button>
               )}
             </div>
