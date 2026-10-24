@@ -485,7 +485,7 @@ function PersonaEditor({
               </Button>
               <Field
                 label="模型地址"
-                hint="支持 Cubism 3 / 4 的 .model3.json；可使用本地 /models/ 路径或支持跨域的远程地址。"
+                hint="支持 Cubism 3 / 4 的 .model3.json，可使用本地 /models/ 路径或远端 HTTP(S) 地址。"
               >
                 <input
                   value={p.live.modelUrl}

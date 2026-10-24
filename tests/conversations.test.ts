@@ -276,9 +276,38 @@ test('legacy conversations keep pinned-first recency until an explicit order is 
     { id: 'c', updated: 0, pinned: true },
   ] as Conversation[];
   assert.deepEqual(
-    organizeConversations(list, { groups: [], entries: {}, order: [], revision: 0 }).map(
-      (c) => c.id,
-    ),
+    organizeConversations(list, {
+      groups: [],
+      entries: {},
+      order: [],
+      revision: 0,
+      ungroupedCollapsed: false,
+    }).map((c) => c.id),
     ['c', 'b', 'a'],
   );
+});
+
+test('ungrouped and all-groups collapse persist without custom groups and survive backup restoration', async (t) => {
+  const f = await fixture(t);
+  const chat = await f.create('保留在未分组');
+  await f.action({ type: 'collapse-all', collapsed: true });
+  assert.equal((await f.bootData()).conversationOrganization.ungroupedCollapsed, true);
+  const group = await f.group('新分组');
+  await f.action({ type: 'collapse-all', collapsed: true });
+  let organization = f.store.organization(f.workspace);
+  assert.ok(organization.groups.every((item) => item.collapsed));
+  await f.action({ type: 'collapse-ungrouped', collapsed: false });
+  organization = f.store.organization(f.workspace);
+  assert.equal(organization.ungroupedCollapsed, false);
+  assert.ok(organization.groups.every((item) => item.collapsed));
+  await f.action({ type: 'move', id: chat, groupId: group });
+  assert.equal(f.store.organization(f.workspace).groups[0].collapsed, false);
+  await f.action({ type: 'collapse-all', collapsed: true });
+  const backup = (await f.call('GET', 'export')).json();
+  await f.action({ type: 'collapse-all', collapsed: false });
+  assert.equal((await f.call('POST', 'import', backup)).statusCode, 200);
+  assert.equal(f.store.organization(f.workspace).ungroupedCollapsed, true);
+  assert.equal(f.store.organization(f.workspace).groups[0].collapsed, true);
+  await f.action({ type: 'move', id: chat, groupId: null });
+  assert.equal(f.store.organization(f.workspace).ungroupedCollapsed, false);
 });

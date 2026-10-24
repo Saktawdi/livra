@@ -10,16 +10,20 @@ export class ApiError extends Error {
   }
 }
 export async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
- const { localCommand } = await import('./local/client');
- return localCommand<T>(path, options);
+  const { localCommand } = await import('./local/client');
+  return localCommand<T>(path, options);
 }
 export const post = <T = any>(path: string, data: unknown, options: RequestInit = {}) =>
- api<T>(path, { ...options, method: 'POST', body: JSON.stringify(data) });
+  api<T>(path, { ...options, method: 'POST', body: JSON.stringify(data) });
 export const put = <T = any>(path: string, data: unknown) =>
- api<T>(path, { method: 'PUT', body: JSON.stringify(data) });
-export async function streamRun(body: unknown, signal: AbortSignal, onEvent: (event: AgentEvent) => void) {
- const { localRun } = await import('./local/client');
- return localRun(body, signal, onEvent);
+  api<T>(path, { method: 'PUT', body: JSON.stringify(data) });
+export async function streamRun(
+  body: unknown,
+  signal: AbortSignal,
+  onEvent: (event: AgentEvent) => void,
+) {
+  const { localRun } = await import('./local/client');
+  return localRun(body, signal, onEvent);
 }
 export function download(name: string, content: string, type = 'text/plain') {
   const url = URL.createObjectURL(new Blob([content], { type }));

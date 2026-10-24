@@ -15,6 +15,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Folder,
+  FolderOpen,
   FolderPlus,
   GripVertical,
   MessageCircle,
@@ -311,6 +312,7 @@ function ConversationRow({
 
 function GroupSection({
   group,
+  collapsed,
   children,
   count,
   busyCount,
@@ -321,6 +323,7 @@ function GroupSection({
   onMenu,
 }: {
   group: ConversationGroup | null;
+  collapsed: boolean;
   children: ReactNode;
   count: number;
   busyCount: number;
@@ -369,12 +372,12 @@ function GroupSection({
         <button
           className="conversation-group-toggle"
           onClick={onToggle}
-          aria-expanded={!group?.collapsed}
-          disabled={!group || disabled}
-          aria-label={group ? (group.collapsed ? '展开分组 ' : '折叠分组 ') + group.name : '未分组'}
+          aria-expanded={!collapsed}
+          disabled={disabled}
+          aria-label={(collapsed ? '展开分组 ' : '折叠分组 ') + (group?.name || '未分组')}
         >
-          {group && <ChevronDown size={12} className={group.collapsed ? 'collapsed' : ''} />}
-          <Folder size={14} className={busyCount ? 'group-running' : ''} />
+          <ChevronDown size={12} className={collapsed ? 'collapsed' : ''} />
+          {collapsed ? <Folder size={14} /> : <FolderOpen size={14} />}
           <span>{group?.name || '未分组'}</span>
           <small>{count}</small>
         </button>
@@ -412,7 +415,7 @@ function GroupSection({
           </IconButton>
         )}
       </div>
-      {!group?.collapsed && (
+      {!collapsed && (
         <div className="conversation-group-content">
           {children}
           {!count && <p className="group-empty">拖入对话，或点击 + 开始</p>}
@@ -469,6 +472,12 @@ export function ConversationList(props: Props) {
         .toLocaleLowerCase()
         .includes(query.trim().toLocaleLowerCase()),
   );
+  const allCollapsed =
+    organization.ungroupedCollapsed && organization.groups.every((g) => g.collapsed);
+  const activeArchived = items.find((c) => c.id === selectedId)?.archived;
+  useEffect(() => {
+    if (selectedId) setArchived(!!activeArchived);
+  }, [selectedId, activeArchived]);
   const draggingGroup = drag?.id.startsWith('group:');
   const collision: CollisionDetection = (args) => {
     const allowed = args.droppableContainers.filter((x) =>
@@ -569,28 +578,20 @@ export function ConversationList(props: Props) {
       <div className="history-heading">
         <span>会话</span>
         <div className="conversation-heading-actions">
-          {!!organization.groups.length && (
-            <IconButton
-              label={
-                organization.groups.every((g) => g.collapsed) ? '展开全部分组' : '折叠全部分组'
-              }
-              disabled={pending}
-              onClick={() =>
-                void perform(() =>
-                  onOrganize({
-                    type: 'collapse-all',
-                    collapsed: !organization.groups.every((g) => g.collapsed),
-                  }),
-                )
-              }
-            >
-              {organization.groups.every((g) => g.collapsed) ? (
-                <ChevronsUpDown size={14} />
-              ) : (
-                <ChevronsDownUp size={14} />
-              )}
-            </IconButton>
-          )}
+          <IconButton
+            label={allCollapsed ? '展开全部分组' : '折叠全部分组'}
+            disabled={pending}
+            onClick={() =>
+              void perform(() =>
+                onOrganize({
+                  type: 'collapse-all',
+                  collapsed: !allCollapsed,
+                }),
+              )
+            }
+          >
+            {allCollapsed ? <ChevronsUpDown size={14} /> : <ChevronsDownUp size={14} />}
+          </IconButton>
           <IconButton
             label="新建分组"
             disabled={pending}
@@ -719,6 +720,10 @@ export function ConversationList(props: Props) {
                       <GroupSection
                         key={group?.id || 'ungrouped'}
                         group={displayGroup}
+                        collapsed={
+                          !query.trim() &&
+                          (group ? group.collapsed : organization.ungroupedCollapsed)
+                        }
                         count={members.length}
                         busyCount={running.length}
                         attention={running.some((c) => sessions[c.id].approvals.length > 0)}
@@ -732,6 +737,13 @@ export function ConversationList(props: Props) {
                                 patch: { collapsed: !group.collapsed },
                               }),
                             );
+                          else
+                            void perform(() =>
+                              onOrganize({
+                                type: 'collapse-ungrouped',
+                                collapsed: !organization.ungroupedCollapsed,
+                              }),
+                            );
                         }}
                         onNew={() => {
                           if (group?.collapsed)
@@ -741,6 +753,10 @@ export function ConversationList(props: Props) {
                                 id: group.id,
                                 patch: { collapsed: false },
                               }),
+                            );
+                          else if (!group && organization.ungroupedCollapsed)
+                            void perform(() =>
+                              onOrganize({ type: 'collapse-ungrouped', collapsed: false }),
                             );
                           onNew(group?.id || null);
                         }}

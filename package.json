@@ -15,7 +15,7 @@
   "scripts": {
     "dev": "npm run dev -w @livra/web",
     "build": "npm run build -w @livra/web",
-    "start": "node scripts/static-server.mjs",
+    "start": "node --env-file-if-exists=.env scripts/static-server.mjs",
     "check": "tsc --noEmit && npm test",
     "format": "prettier --write \"apps/*/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/*.mjs\"",
     "format:check": "prettier --check \"apps/*/src/**/*.{ts,tsx,css}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/*.mjs\"",
@@ -38,5 +38,8 @@
   },
   "overrides": {
     "katex": "^0.19.1"
+  },
+  "dependencies": {
+    "undici": "^7.30.1"
   }
 }

@@ -665,7 +665,7 @@ export function LiveModelLibrary({
               </Field>
               <Field
                 label="模型地址"
-                hint="Live2D 模型 JSON，本地 /models/ 路径或支持跨域的 HTTP(S) 地址。"
+                hint="Live2D 模型 JSON，可填写本地 /models/ 路径或远端 HTTP(S) 地址。"
               >
                 <input
                   value={url}

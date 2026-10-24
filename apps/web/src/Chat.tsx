@@ -41,6 +41,7 @@ import { Presence } from './Presence';
 import { ModelPicker } from './ModelPicker';
 import { ComposerMetrics } from './ComposerMetrics';
 import { ReasoningPicker } from './ReasoningPicker';
+import { Avatar } from './Avatar';
 import type { RemoteModels } from './useSaktaModels';
 import { ArtifactPreview } from './ArtifactPreview';
 import { Button, IconButton, Markdown, CopyButton, Modal } from './ui';
@@ -429,7 +430,11 @@ export function Chat({
           ) : (
             <div className="message-list">
               {conversation!.messages.map((m, i) => (
-                <article key={m.id} className={'message ' + m.role}>
+                <article
+                  key={m.id}
+                  className={'message ' + m.role}
+                  aria-label={m.role === 'user' ? '你的消息' : persona.name + '的回答'}
+                >
                   <div
                     className="message-avatar"
                     style={
@@ -438,7 +443,11 @@ export function Chat({
                         : undefined
                     }
                   >
-                    {m.role === 'assistant' ? persona.name.slice(0, 1) : '我'}
+                    <Avatar
+                      role={m.role}
+                      src={m.role === 'user' ? settings.userAvatar : settings.agentAvatar}
+                      name={m.role === 'assistant' ? persona.name : undefined}
+                    />
                   </div>
                   <div className="message-body">
                     <div className="message-meta">

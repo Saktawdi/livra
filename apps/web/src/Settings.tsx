@@ -696,10 +696,7 @@ function ProviderEditor({
             ]}
           />
         </Field>
-        <Field
-          label="服务地址 Base URL"
-          hint="浏览器直接连接此地址，包含版本路径（如 /v1）；服务需允许当前站点跨域访问。"
-        >
+        <Field label="服务地址 Base URL" hint="填写供应商的接口地址，包含版本路径（如 /v1）。">
           <input
             type="url"
             value={p.baseUrl}
@@ -834,13 +831,7 @@ function ProviderEditor({
         {p.protocol === 'fish' && (
           <p className="info-box">
             推荐 s2.1-pro。s2.1-pro-free 可用于账号允许的测试额度。音色在「声音」或人偶卡中填写
-            reference_id；密钥保存在当前浏览器，请求直接发送给 Fish。
-          </p>
-        )}
-        {p.protocol === 'fish' && /^https:\/\/api\.fish\.audio(?:\/|$)/i.test(p.baseUrl) && (
-          <p className="info-box">
-            Fish 官方地址目前不允许网页跨域调用。请使用允许跨域的 Fish 兼容地址，或在「声音」中选择
-            VITS / 浏览器朗读。
+            reference_id；密钥保存在当前浏览器。
           </p>
         )}
         {p.kind === 'music' && (

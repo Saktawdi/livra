@@ -1,24 +1,56 @@
 import { Buffer } from 'buffer';
 
 export function validateUrl(value: string) {
- const url = new URL(value);
- if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw Error('仅支持不含用户凭据的 HTTP(S) 地址');
- return url;
+  const url = new URL(value);
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password)
+    throw Error('仅支持不含用户凭据的 HTTP(S) 地址');
+  return url;
 }
-export type Transport = (url: string, init?: RequestInit, allowPrivate?: boolean, allowProxyDns?: boolean) => Promise<Response>;
-let transport: Transport = async (url, init = {}) => {
- const parsed = validateUrl(url);
- const signal = AbortSignal.any([AbortSignal.timeout(180_000), ...(init.signal ? [init.signal] : [])]);
- const headers = new Headers(init.headers);
- headers.delete('User-Agent');
- try {
-  return await fetch(parsed, { ...init, headers, credentials: 'omit', redirect: 'error', signal });
- } catch (error) {
-  if (signal.aborted) throw signal.reason;
-  throw new Error('无法直连 ' + parsed.origin + '：请检查网络、服务地址及该服务的跨域许可（CORS）。', { cause: error });
- }
+export type Transport = (
+  url: string,
+  init?: RequestInit,
+  allowPrivate?: boolean,
+  allowProxyDns?: boolean,
+) => Promise<Response>;
+export const usesNetworkRelay = () =>
+  typeof document !== 'undefined' && !!document.querySelector('meta[name="livra-network-relay"]');
+export const assetRequestUrl = (url: string) =>
+  usesNetworkRelay()
+    ? '/__livra_transport?asset=1&url=' + encodeURIComponent(validateUrl(url).href)
+    : url;
+export const browserNetwork: Transport = async (url, init = {}) => {
+  const parsed = validateUrl(url);
+  const signal = AbortSignal.any([
+    AbortSignal.timeout(900_000),
+    ...(init.signal ? [init.signal] : []),
+  ]);
+  const headers = new Headers(init.headers);
+  headers.delete('User-Agent');
+  try {
+    const relay = usesNetworkRelay();
+    if (relay) headers.set('X-Livra-Transport', 'web');
+    const response = await fetch(
+      relay ? '/__livra_transport?url=' + encodeURIComponent(parsed.href) : parsed,
+      { ...init, headers, credentials: 'omit', redirect: 'error', signal },
+    );
+    if (relay && response.headers.get('X-Livra-Relay-Error') === '1') {
+      const data = await response
+        .clone()
+        .json()
+        .catch(() => null);
+      if (data?.error) throw Error(data.error);
+    }
+    return response;
+  } catch (error) {
+    if (signal.aborted) throw signal.reason;
+    if (error instanceof Error && error.message.startsWith('无法连接上游服务：')) throw error;
+    throw new Error('无法连接 ' + parsed.origin + '，请检查服务地址及网络连接。', { cause: error });
+  }
 };
-export function configureTransport(value: Transport) { transport = value; }
+let transport: Transport = browserNetwork;
+export function configureTransport(value: Transport) {
+  transport = value;
+}
 export const network: Transport = (...args) => transport(...args);
 
 export class UpstreamResponseError extends Error {

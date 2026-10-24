@@ -37,13 +37,13 @@ docker compose up -d --build
 
 打开 **http://localhost:3400**。没有模型密钥也能进入空间、配置人偶、编辑和保存 Marp；推理与媒体生成需要连接对应服务。
 
-前后端独立容器：
+可选的独立静态入口：
 
 ```sh
 docker compose -f compose.split.yaml up -d --build
 ```
 
-此时打开 **http://localhost:5180**。Web 使用 Nginx，API 使用 Node，同源代理处理 HTTP 与 SSE。
+此时打开 **http://localhost:5180**。Nginx 提供页面，Node 只负责同源网络传输。
 
 ### 本地开发
 
@@ -55,12 +55,14 @@ cp .env.example .env
 npm run dev
 ```
 
-Web：http://localhost:5180，API：http://localhost:3400。生产构建使用 `npm run build`、`npm start`。
+打开 **http://localhost:5180**。Vite 已内置同源传输，无需另起业务 API。生产构建使用 `npm run build`、`npm start`，打开 **http://localhost:3400**。
+
+模型、聊天流、生图、语音和远端 Live2D 资源使用同一传输层，支持 Windows 系统代理及 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`。请求不依赖供应商对网页开放 CORS；流式输出和停止操作可一直传递到上游。
 
 ## 连接模型与声音
 
 1. 打开「设置 → 模型连接」，选择协议、填写 Base URL 与 API Key，拉取或手动填写模型 ID，保存连接与设置。
-2. 在对话输入框搜索并选择模型。输入区下方居中显示上下文 token 和生成速率；估算带 `≈`，没有可靠样本时显示 `—`。使用本机 Ollama 等私网服务时，由部署管理员设置 `ALLOW_PRIVATE_ENDPOINTS=true`；容器中使用可访问宿主机的地址。
+2. 在对话输入框搜索并选择模型。输入区下方居中显示上下文 token 和生成速率；估算带 `≈`，没有可靠样本时显示 `—`。可连接本机 Ollama 等服务；容器中使用可访问宿主机的地址。
 3. Fish 选择 **Fish Audio** 预设，默认使用 `s2.1-pro`，然后在「声音」选择连接并填写音色 `reference_id`。人偶卡可以单独设置音色与语言。
 4. 使用 Sakta 时，在「Sakta 账号」登录，再在对话中选择账号允许的模型。拉取期间显示加载状态；失败可直接重试，刷新时保留已有列表。
 
@@ -68,9 +70,9 @@ Web：http://localhost:5180，API：http://localhost:3400。生产构建使用 `
 
 ## 数据与部署
 
-凭据保存在后端；SQLite 中的设置、会话、记忆和作品使用 AES-256-GCM 加密。浏览器以 HttpOnly Cookie 访问自己的匿名空间，Sakta 登录只用于模型授权。
+设置、凭据、会话、分组、记忆和作品保存在当前浏览器的 IndexedDB。Agent、工具编排与 Marp 预览也在浏览器执行；Node 不存储这些业务数据，只按当前请求传输网络内容。Sakta 登录只用于模型授权。
 
-清除 Cookie 后不会自动找回原空间；换设备前请导出。便携 JSON 导出不包含密钥，完整服务备份须同时保存数据库与 `vault.key`。当前采用单实例 SQLite，不支持多人同步或数据库多副本。
+清除站点数据会删除本机空间，换浏览器、端口或设备前请导出。便携 JSON 导出不包含密钥，恢复后需要重新配置连接凭据。此前服务端数据只在受控的本地升级入口迁移，原数据库保留。当前不提供跨设备同步。
 
 公网部署、HTTPS、访问密码、备份与 Live2D 资源替换见 [部署文档](docs/DEPLOYMENT.md)。
 
@@ -78,19 +80,20 @@ Web：http://localhost:5180，API：http://localhost:3400。生产构建使用 `
 
 ```text
 apps/web         React + TypeScript + Vite / Live2D
-apps/server      Fastify / Agent / 供应商适配 / 加密 SQLite
+packages/runtime 浏览器 Agent / 供应商、语音与工具适配
 packages/shared  Zod 配置与跨端类型
-tests            协议、Agent、语音、存储和安全集成测试
+scripts          静态服务 / 同源流式传输
+apps/server      保留的旧版服务与数据迁移支持
+tests            协议、Agent、语音、存储和传输回归
 ```
 
 ```sh
-npm run check         # 类型检查与集成测试
+npm run check         # 类型检查与单元、协议回归
 npm run format:check  # 代码格式
-npm run build         # Web 与 API 生产构建
-node scripts/smoke.mjs http://localhost:3400
+npm run build         # Web 生产构建
 ```
 
-Smoke 使用独立匿名空间创建并清理一份验收作品。设计定位与界面规则见 [产品理念](docs/PRODUCT.md) 和 [设计体系](docs/DESIGN.md)；工具开发见 [架构文档](docs/ARCHITECTURE.md)。
+页面交互由使用者手动验收。设计定位与界面规则见 [产品理念](docs/PRODUCT.md) 和 [设计体系](docs/DESIGN.md)；工具开发见 [架构文档](docs/ARCHITECTURE.md)。
 
 ## 当前边界与许可
 

@@ -312,6 +312,16 @@ export const settingsSchema = z.object({
   searchEngine: z.enum(['searxng', 'tavily', 'anysearch']).default('anysearch'),
   appearance: appearanceSchema.prefault({}),
   activeSkinName: z.string().max(80).default(''),
+  userAvatar: z
+    .string()
+    .max(500000)
+    .regex(/^$|^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/)
+    .default(''),
+  agentAvatar: z
+    .string()
+    .max(500000)
+    .regex(/^$|^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/)
+    .default(''),
   theme: z.enum(['light', 'dark', 'system']).default('dark'),
   accent: z.enum(['sage', 'iris', 'ocean', 'rose']).default('sage'),
   locale: z.enum(['zh-CN', 'en', 'ja']).default('zh-CN'),

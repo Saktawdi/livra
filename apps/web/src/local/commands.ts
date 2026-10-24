@@ -1,10 +1,29 @@
 import Ajv from 'ajv';
 import { z } from 'zod';
-import { settingsSchema, publicSettings, providerSchema, personaSchema, speechLanguageSchema, speechEngine, skinPackageSchema, conversationOrganizationSchema, conversationMetaSchema, liveModelCatalog, type Conversation, type Artifact } from '@livra/shared';
+import {
+  settingsSchema,
+  publicSettings,
+  providerSchema,
+  personaSchema,
+  speechLanguageSchema,
+  speechEngine,
+  skinPackageSchema,
+  conversationOrganizationSchema,
+  conversationMetaSchema,
+  liveModelCatalog,
+  type Conversation,
+  type Artifact,
+} from '@livra/shared';
 import { environment } from '@livra/runtime/environment';
 import { readJson, safeError } from '@livra/runtime/network';
 import { listModels } from '@livra/runtime/providers';
-import { toolList, executeTool, renderSlides, builtInNames, type Context } from '@livra/runtime/tools';
+import {
+  toolList,
+  executeTool,
+  renderSlides,
+  builtInNames,
+  type Context,
+} from '@livra/runtime/tools';
 import { runs, resolveProvider } from '@livra/runtime/agent';
 import { listSaktaModels, saktaRequest } from '@livra/runtime/sakta';
 import { LiveModelService } from '@livra/runtime/live-models';
@@ -16,13 +35,21 @@ import type { BrowserStore } from './store';
 const randomUUID = () => crypto.randomUUID();
 export const workspace = 'browser';
 export function createLocalCommands(store: BrowserStore) {
- const app = new LocalRouter();
- const liveModels = new LiveModelService(store);
- const vits = new VitsService();
- const context = (_workspace: string, signal = AbortSignal.timeout(180_000)): Context => {
- const settings = store.settings(workspace);
- return {store, workspace, settings, persona: settings.personas[0], signal, emit: () => {}, liveModels};
- };
+  const app = new LocalRouter();
+  const liveModels = new LiveModelService(store);
+  const vits = new VitsService();
+  const context = (_workspace: string, signal = AbortSignal.timeout(180_000)): Context => {
+    const settings = store.settings(workspace);
+    return {
+      store,
+      workspace,
+      settings,
+      persona: settings.personas[0],
+      signal,
+      emit: () => {},
+      liveModels,
+    };
+  };
   app.get('/api/bootstrap', async (req) => ({
     settings: publicSettings(store.settings(req.workspace)),
     conversationOrganization: store.organization(req.workspace),
@@ -230,7 +257,9 @@ export function createLocalCommands(store: BrowserStore) {
     }
     return executeTool(name, args, ctx, true);
   });
-  app.get('/api/artifacts', async () => store.artifacts(workspace).map(a => ({...a, data: {...a.data, html: undefined}})));
+  app.get('/api/artifacts', async () =>
+    store.artifacts(workspace).map((a) => ({ ...a, data: { ...a.data, html: undefined } })),
+  );
   app.get('/api/artifacts/:id', async (req, reply) => {
     const a = store.get<Artifact>(req.workspace, 'artifact', (req.params as any).id);
     return a || reply.code(404).send({ error: '作品不存在' });
@@ -495,13 +524,17 @@ export function createLocalCommands(store: BrowserStore) {
       );
   });
 
-app.post('/api/runs/:id/stop', async req => { runs.get(req.params.id)?.controller.abort(); return {ok:true}; });
- app.post('/api/runs/:id/approvals/:approval', async req => {
- const run = runs.get(req.params.id);
- const {allow} = z.object({allow:z.boolean()}).parse(req.body);
- const resolve = run?.approvals.get(req.params.approval);
- if (!resolve) throw Object.assign(Error('请求已过期'), {statusCode:404});
- resolve(allow); return {ok:true};
- });
- return {app, context};
+  app.post('/api/runs/:id/stop', async (req) => {
+    runs.get(req.params.id)?.controller.abort();
+    return { ok: true };
+  });
+  app.post('/api/runs/:id/approvals/:approval', async (req) => {
+    const run = runs.get(req.params.id);
+    const { allow } = z.object({ allow: z.boolean() }).parse(req.body);
+    const resolve = run?.approvals.get(req.params.approval);
+    if (!resolve) throw Object.assign(Error('请求已过期'), { statusCode: 404 });
+    resolve(allow);
+    return { ok: true };
+  });
+  return { app, context };
 }

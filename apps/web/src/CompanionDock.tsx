@@ -38,6 +38,7 @@ export function CompanionDock({
   const [dragging, setDragging] = useState(false);
   const suppressClick = useRef(false);
   const [actions, setActions] = useState(false);
+  const [modelStatus, setModelStatus] = useState('loading');
   const [gesture, setGesture] = useState({ id: 0, key: 'reset' });
   const [position, setPosition] = useState(() => {
     try {
@@ -107,7 +108,10 @@ export function CompanionDock({
     <aside
       ref={host}
       className={
-        'companion-dock' + (revealed ? ' is-revealed' : '') + (dragging ? ' is-dragging' : '')
+        'companion-dock' +
+        (revealed ? ' is-revealed' : '') +
+        (dragging ? ' is-dragging' : '') +
+        (modelStatus === 'error' ? ' has-live-error' : '')
       }
       style={{ left: position.x, top: position.y }}
       aria-label="随行伙伴"
@@ -196,6 +200,7 @@ export function CompanionDock({
           gesture={gesture}
           reducedMotion={settings.reducedMotion}
           onTap={() => react('greet')}
+          onStatus={setModelStatus}
         />
       </div>
       <div className="companion-chrome">
@@ -205,7 +210,13 @@ export function CompanionDock({
         </div>
         <div className="companion-dock-status" role="status">
           <i data-active={working} />
-          {status}
+          {modelStatus === 'error'
+            ? '人偶未加载，可点击上方重试'
+            : modelStatus === 'loading'
+              ? '正在加载人偶…'
+              : modelStatus === 'recovering'
+                ? '正在恢复人偶…'
+                : status}
         </div>
         {tasks.length > 0 && (
           <div className="companion-task-list" aria-label="正在运行的对话">

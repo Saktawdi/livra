@@ -31,6 +31,7 @@ export const conversationOrganizationSchema = z
   .object({
     revision: z.number().int().nonnegative().default(0),
     groups: z.array(conversationGroupSchema).max(100).default([]),
+    ungroupedCollapsed: z.boolean().default(false),
     entries: z.record(z.string().uuid(), conversationMetaSchema).default({}),
     order: z.array(z.string().uuid()).max(1000).default([]),
   })
@@ -58,6 +59,7 @@ export const organizationActionSchema = z.discriminatedUnion('type', [
     beforeId: z.string().uuid().nullable(),
   }),
   z.object({ type: z.literal('collapse-all'), collapsed: z.boolean() }),
+  z.object({ type: z.literal('collapse-ungrouped'), collapsed: z.boolean() }),
   z.object({
     type: z.literal('move'),
     id: z.string().uuid(),

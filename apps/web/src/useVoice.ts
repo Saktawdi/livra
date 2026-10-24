@@ -113,9 +113,16 @@ export function useVoice(settings: Settings, persona: Persona, notify: Notify) {
             : '正在准备播放',
       );
       if (engine !== 'browser') {
-        const blob = await post<Blob>('/speech', {
- input: clean, voice: engine === 'vits' ? persona.vitsVoice : persona.voice, language, draft,
- }, {signal: controller.signal});
+        const blob = await post<Blob>(
+          '/speech',
+          {
+            input: clean,
+            voice: engine === 'vits' ? persona.vitsVoice : persona.voice,
+            language,
+            draft,
+          },
+          { signal: controller.signal },
+        );
         if (id !== generation.current) return;
         url.current = URL.createObjectURL(blob);
         const player = new Audio(url.current);

@@ -6,14 +6,7 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3400
-      DATA_DIR: /app/data
-      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
-      ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
-      SAKTA_BASE_URL: ${SAKTA_BASE_URL-https://api.sakta.top}
-      SEARXNG_URL: ${SEARXNG_URL:-}
-      ALLOW_PRIVATE_ENDPOINTS: ${ALLOW_PRIVATE_ENDPOINTS:-false}
-    volumes:
-      - livra-data:/app/data
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
     restart: unless-stopped
-volumes:
-  livra-data:

@@ -70,10 +70,14 @@ export const builtInNames = [
 
 function artifact(ctx: Context, kind: Artifact['kind'], title: string, data: Artifact['data']) {
   const result: Artifact = { id: randomUUID(), kind, title, created: Date.now(), data };
-  const images = ctx.store.local ? data.images : data.images?.map(
-    (_: unknown, index: number) => `/api/artifacts/${result.id}/media/${index}`,
-  );
-  const audio = ctx.store.local ? data.audio : data.audio ? `/api/artifacts/${result.id}/media/0` : undefined;
+  const images = ctx.store.local
+    ? data.images
+    : data.images?.map((_: unknown, index: number) => `/api/artifacts/${result.id}/media/${index}`);
+  const audio = ctx.store.local
+    ? data.audio
+    : data.audio
+      ? `/api/artifacts/${result.id}/media/0`
+      : undefined;
   ctx.store.put(ctx.workspace, 'artifact', result);
   ctx.emit({
     type: 'artifact',

@@ -2,26 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import type { LiveState, Mood, Persona } from '@livra/shared';
 import { IconButton } from './ui';
-
-const scripts = new Map<string, Promise<void>>();
-function loadScript(url: string) {
-  if (!scripts.has(url))
-    scripts.set(
-      url,
-      new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = url;
-        script.onload = () => resolve();
-        script.onerror = () => {
-          scripts.delete(url);
-          script.remove();
-          reject(Error('Live2D Core 未能加载'));
-        };
-        document.head.appendChild(script);
-      }),
-    );
-  return scripts.get(url)!;
-}
+import { loadLive2D, waitForAvatarSize, liveModelSource } from './live2d-runtime';
 export function LiveAvatar({
   persona,
   state = 'idle',
@@ -56,51 +37,81 @@ export function LiveAvatar({
   stateRef.current = { state, mood, reducedMotion, persona, audioLevel, onTap, compact };
   const [status, setStatus] = useState('loading'),
     [retry, setRetry] = useState(0);
+  const [loadError, setLoadError] = useState('');
+  const recoveries = useRef(0);
+  useEffect(() => {
+    recoveries.current = 0;
+  }, [persona.live.modelUrl, persona.live.coreUrl]);
   useEffect(() => {
     onStatus?.(status);
   }, [status, onStatus]);
-  const appRef = useRef<any>(null),
-    pausedRef = useRef(paused);
-  pausedRef.current = paused;
+  const appRef = useRef<any>(null);
   useEffect(() => {
     let disposed = false;
     let app: any;
     let observer: ResizeObserver | undefined;
     let model: any;
+    let canvas: HTMLCanvasElement | undefined;
+    let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+    const abort = new AbortController();
+    const recover = () => {
+      if (disposed) return;
+      clearTimeout(recoveryTimer);
+      if (recoveries.current++ < 2) setRetry((value) => value + 1);
+      else {
+        setLoadError('图形渲染暂不可用，请重新加载人偶');
+        setStatus('error');
+      }
+    };
+    const contextLost = (event: Event) => {
+      event.preventDefault();
+      if (disposed) return;
+      app?.stop();
+      setStatus('recovering');
+      clearTimeout(recoveryTimer);
+      recoveryTimer = setTimeout(recover, 1200);
+    };
     setStatus('loading');
+    setLoadError('');
     async function setup() {
       if (!persona.live.modelUrl) {
         setStatus('symbol');
         return;
       }
-      await loadScript(persona.live.coreUrl);
-      await loadScript('/vendor/live2d.min.js');
+      const PIXI = await loadLive2D(persona.live.coreUrl);
       if (disposed) return;
-      const PIXI = await import('pixi.js');
-      if (!(window as any).PIXI?.live2d) (window as any).PIXI = { ...PIXI };
-      await loadScript('/vendor/pixi-live2d-display-all-0.4.0.min.js');
       const { Live2DModel } = (window as any).PIXI.live2d;
       const container = host.current;
       if (disposed || !container?.isConnected) return;
+      await waitForAvatarSize(container, abort.signal);
+      if (disposed) return;
       app = new PIXI.Application({
         backgroundAlpha: 0,
         antialias: true,
         autoDensity: true,
         resolution: Math.min(window.devicePixelRatio || 1, 2),
         resizeTo: container,
+        autoStart: false,
+        sharedTicker: false,
       });
       appRef.current = app;
       app.ticker.maxFPS = 30;
-      container.appendChild(app.view as HTMLCanvasElement);
-      const loadingModel = Live2DModel.from(persona.live.modelUrl, {
+      canvas = app.view as HTMLCanvasElement;
+      canvas.addEventListener('webglcontextlost', contextLost);
+      canvas.addEventListener('webglcontextrestored', recover);
+      container.appendChild(canvas);
+      const source = await liveModelSource(persona.live.modelUrl, abort.signal);
+      if (disposed) return;
+      const loadingModel = Live2DModel.from(source, {
         autoInteract: false,
         idleMotionGroup: persona.live.idleMotion,
         motionPreload: 'IDLE' as any,
+        autoUpdate: false,
       });
       let expired = false;
       void loadingModel.then(
         (loaded: any) => {
-          if (expired) loaded.destroy();
+          if (expired || disposed) loaded.destroy({ texture: false, baseTexture: false });
         },
         () => {},
       );
@@ -119,15 +130,19 @@ export function LiveAvatar({
         clearTimeout(timeout!);
       }
       if (disposed || host.current !== container || !container.isConnected) {
-        model.destroy();
+        if (!model.destroyed) model.destroy({ texture: false, baseTexture: false });
         return;
       }
       modelRef.current = model;
       app.stage.addChild(model);
+      app.ticker.add(() => {
+        if (!disposed && !model.destroyed) model.update(app.ticker.deltaMS);
+      });
       model.anchor.set(0.5, 1);
       const fit = () => {
         if (!host.current || disposed) return;
         const { width, height } = host.current.getBoundingClientRect();
+        if (width <= 0 || height <= 0 || app.renderer.gl?.isContextLost()) return;
         app.renderer.resize(width, height);
         const { live } = stateRef.current.persona;
         const crop = stateRef.current.compact;
@@ -145,10 +160,8 @@ export function LiveAvatar({
             ? height * (0.03 + live.offsetY) + model.internalModel.height * scale
             : height * (0.99 + live.offsetY),
         );
-        if (pausedRef.current) {
-          model.update(16);
-          app.render();
-        }
+        model.update(16);
+        app.render();
       };
       fitRef.current = fit;
       fit();
@@ -203,12 +216,17 @@ export function LiveAvatar({
       if (!disposed) {
         console.warn('Live2D:', error.message);
         app?.stop();
+        setLoadError(error.message || '人偶资源未能加载');
         setStatus('error');
       }
     });
     // Pixi caches model textures by URL; other visible portraits may share them.
     return () => {
       disposed = true;
+      abort.abort();
+      clearTimeout(recoveryTimer);
+      canvas?.removeEventListener('webglcontextlost', contextLost);
+      canvas?.removeEventListener('webglcontextrestored', recover);
       observer?.disconnect();
       modelRef.current = null;
       fitRef.current = null;
@@ -253,8 +271,12 @@ export function LiveAvatar({
     const apply = () => {
       cancelAnimationFrame(frame);
       if (!appRef.current || !modelRef.current) return;
-      const run = !paused && !document.hidden;
-      modelRef.current.autoUpdate = run;
+      if (status !== 'ready') {
+        appRef.current.stop();
+        return;
+      }
+      const run = !paused && !document.hidden && status === 'ready';
+      modelRef.current.autoUpdate = false;
       if (run) appRef.current.start();
       else {
         const settle = () => {
@@ -282,6 +304,7 @@ export function LiveAvatar({
   return (
     <div
       className={`live-avatar ${compact ? 'compact' : ''} state-${state}`}
+      data-live-status={status}
       style={{ '--persona-color': persona.color } as React.CSSProperties}
     >
       <div
@@ -314,15 +337,25 @@ export function LiveAvatar({
       />
       {status !== 'ready' && (
         <div className="live-fallback" role="status">
-          <div className={'avatar-spark ' + (status === 'loading' ? 'breathe' : '')}>
+          <div
+            className={
+              'avatar-spark ' + (['loading', 'recovering'].includes(status) ? 'breathe' : '')
+            }
+          >
             {persona.name.slice(0, 1)}
           </div>
-          {status === 'loading' ? (
-            <span>正在加载人偶…</span>
+          {status === 'loading' || status === 'recovering' ? (
+            <span>{status === 'recovering' ? '正在恢复人偶…' : '正在加载人偶…'}</span>
           ) : status === 'error' ? (
             <>
-              <span>人偶暂时未能加载</span>
-              <IconButton label="重新加载人偶" onClick={() => setRetry((v) => v + 1)}>
+              <span title={loadError}>人偶暂时未能加载</span>
+              <IconButton
+                label="重新加载人偶"
+                onClick={() => {
+                  recoveries.current = 0;
+                  setRetry((v) => v + 1);
+                }}
+              >
                 <RotateCcw size={16} />
               </IconButton>
             </>

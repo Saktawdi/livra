@@ -1,5 +1,12 @@
 import { configureTransport, validateUrl } from '../../../packages/runtime/src/network.ts';
-export { network, readJson, safeError, validateUrl, endpoint, UpstreamResponseError } from '../../../packages/runtime/src/network.ts';
+export {
+  network,
+  readJson,
+  safeError,
+  validateUrl,
+  endpoint,
+  UpstreamResponseError,
+} from '../../../packages/runtime/src/network.ts';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { Agent, fetch as transport } from 'undici';

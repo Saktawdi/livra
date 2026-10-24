@@ -227,7 +227,9 @@ export async function complete(
       'Content-Type': 'application/json',
       'x-api-key': provider.apiKey || '',
       'anthropic-version': '2023-06-01',
-      ...(typeof window !== 'undefined' ? { 'anthropic-dangerous-direct-browser-access': 'true' } : {}),
+      ...(typeof window !== 'undefined'
+        ? { 'anthropic-dangerous-direct-browser-access': 'true' }
+        : {}),
     };
     delete body.stream_options;
     delete body.reasoning_effort;

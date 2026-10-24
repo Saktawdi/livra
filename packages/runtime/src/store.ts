@@ -1,13 +1,23 @@
-import { conversationOrganizationSchema, organizationActionSchema, organizeConversations, type ConversationOrganization, type OrganizationAction, type Settings, type Conversation, type Artifact, type Memory } from '@livra/shared';
+import {
+  conversationOrganizationSchema,
+  organizationActionSchema,
+  organizeConversations,
+  type ConversationOrganization,
+  type OrganizationAction,
+  type Settings,
+  type Conversation,
+  type Artifact,
+  type Memory,
+} from '@livra/shared';
 const randomUUID = () => crypto.randomUUID();
 export abstract class RuntimeStore {
- readonly local: boolean = false;
- abstract settings(workspace: string): Settings;
- abstract saveSettings(workspace: string, settings: Settings): void;
- abstract list<T>(workspace: string, kind: string): T[];
- abstract get<T>(workspace: string, kind: string, id: string): T | undefined;
- abstract put<T extends { id: string }>(workspace: string, kind: string, record: T): T;
- abstract delete(workspace: string, kind: string, id: string): void;
+  readonly local: boolean = false;
+  abstract settings(workspace: string): Settings;
+  abstract saveSettings(workspace: string, settings: Settings): void;
+  abstract list<T>(workspace: string, kind: string): T[];
+  abstract get<T>(workspace: string, kind: string, id: string): T | undefined;
+  abstract put<T extends { id: string }>(workspace: string, kind: string, record: T): T;
+  abstract delete(workspace: string, kind: string, id: string): void;
   conversations(workspace: string) {
     return organizeConversations(
       this.list<Conversation>(workspace, 'conversation'),
@@ -45,9 +55,12 @@ export abstract class RuntimeStore {
         collapsed: false,
       });
     } else if (action.type === 'collapse-all') {
+      next.ungroupedCollapsed = action.collapsed;
       next.groups.forEach((g) => {
         g.collapsed = action.collapsed;
       });
+    } else if (action.type === 'collapse-ungrouped') {
+      next.ungroupedCollapsed = action.collapsed;
     } else if (action.type === 'move') {
       const c = this.conversation(workspace, action.id) || missing('对话不存在');
       if (action.groupId && !next.groups.some((g) => g.id === action.groupId))
@@ -75,6 +88,7 @@ export abstract class RuntimeStore {
       order.splice(index, 0, c.id);
       next.order = order;
       if (action.groupId) next.groups.find((g) => g.id === action.groupId)!.collapsed = false;
+      else next.ungroupedCollapsed = false;
     } else {
       const group = next.groups.find((g) => g.id === action.id) || missing('分组不存在');
       if (action.type === 'update-group') Object.assign(group, action.patch);

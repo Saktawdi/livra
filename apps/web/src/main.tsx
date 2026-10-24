@@ -7,6 +7,7 @@ import './refinements.css';
 import './skins.css';
 import './generated-skins.css';
 import './conversations.css';
+import './chat-polish.css';
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: string }> {
   state = { error: '' };
   static getDerivedStateFromError(error: Error) {

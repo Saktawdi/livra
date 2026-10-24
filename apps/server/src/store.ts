@@ -3,11 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  defaultSettings,
-  settingsSchema,
-  type Settings,
-} from '@livra/shared';
+import { defaultSettings, settingsSchema, type Settings } from '@livra/shared';
 
 export class Store extends RuntimeStore {
   db: DatabaseSync;

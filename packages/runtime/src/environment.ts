@@ -1,2 +1,3 @@
-// Browser builds have no server environment or private-network forwarding.
-export const environment: Record<string, string | undefined> = typeof process === 'undefined' ? {} : process.env;
+// The browser owns runtime preferences; legacy Node adapters also read process.env.
+export const environment: Record<string, string | undefined> =
+  typeof process === 'undefined' ? {} : process.env;

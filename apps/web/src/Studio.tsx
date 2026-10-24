@@ -14,6 +14,9 @@ import {
   ArrowRight,
   CircleHelp,
   Maximize2,
+  ImagePlus,
+  Check,
+  Clock3,
 } from 'lucide-react';
 import type { Artifact, Settings } from '@livra/shared';
 import { applyMarpTheme, marpThemeName } from '@livra/shared';
@@ -21,6 +24,7 @@ import { api, post, download, readAttachment } from './api';
 import { PageIntro, Field, Button, IconButton, Badge, Modal, Select } from './ui';
 import type { Notify } from './App';
 import { useSessionState } from './useSessionState';
+import './studio.css';
 
 const initialMarkdown =
   '---\nmarp: true\ntheme: default\npaginate: true\n---\n\n# 项目提案\n\n### 主题 · 目标 · 下一步\n\n在这里写下项目简介。\n\n---\n\n# 实施计划\n\n- 一个明确的目标\n- 三个有力的观点\n- 一个值得行动的下一步\n\n---\n\n# 下一步\n\n**明确负责人和完成时间。**\n';
@@ -54,6 +58,14 @@ export function Studio({
     [result, setResult] = useState<Artifact | null>(null),
     [error, setError] = useState(''),
     [zoom, setZoom] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0),
+    [referenceDragging, setReferenceDragging] = useState(false);
+  useEffect(() => {
+    if (!busy) return;
+    setElapsed(0);
+    const timer = setInterval(() => setElapsed((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [busy]);
   const [themes, setThemes] = useState<Artifact[]>([]),
     [themeId, setThemeId] = useSessionState('themeId', '');
   const appliedTheme = themes.find((t) => t.id === themeId)?.data.css as string | undefined;
@@ -91,12 +103,28 @@ export function Studio({
   useEffect(() => {
     setResult(null);
     setError('');
+  }, [tab]);
+  useEffect(() => {
     const id = kind === 'image' ? settings.imageProvider : settings.musicProvider,
       m = kind === 'image' ? settings.imageModel : settings.musicModel;
-    setSelection(
-      id && m ? id + '|' + m : options.length ? options[0].id + '|' + options[0].model : '',
+    const valid = (value: string) => options.some((o) => o.id + '|' + o.model === value);
+    setSelection((current) =>
+      valid(current)
+        ? current
+        : id && m && valid(id + '|' + m)
+          ? id + '|' + m
+          : options.length
+            ? options[0].id + '|' + options[0].model
+            : '',
     );
-  }, [tab, settings.providers]);
+  }, [
+    kind,
+    settings.providers,
+    settings.imageProvider,
+    settings.imageModel,
+    settings.musicProvider,
+    settings.musicModel,
+  ]);
   useEffect(() => {
     if (!['slides', 'theme'].includes(tab)) return;
     const abort = new AbortController();
@@ -130,6 +158,16 @@ export function Studio({
     };
   }, [tab, markdown, theme, themeName, appliedTheme]);
   useEffect(() => () => controller.current?.abort(), []);
+  async function addReference(file?: File) {
+    if (!file) return;
+    try {
+      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) throw Error('参考图支持 PNG、JPEG 和 WebP');
+      const attachment = await readAttachment(file);
+      setReference(attachment.data);
+    } catch (error) {
+      notify((error as Error).message, 'error');
+    }
+  }
   async function generate() {
     if (busy) return;
     if (['image', 'music'].includes(tab) && !selection) {
@@ -183,31 +221,133 @@ export function Studio({
     }
   }
   const tabs = [
-    { id: 'image', name: '图像', icon: Image },
-    { id: 'music', name: '音乐', icon: Music2 },
-    { id: 'slides', name: '演示文稿', icon: Presentation },
-    { id: 'theme', name: 'Marp 主题', icon: Palette },
+    {
+      id: 'image',
+      name: '图像',
+      icon: Image,
+      title: '让脑海里的画面，成为作品。',
+      caption: '从一句灵感开始，描绘属于你的画面。',
+      label: '图像创作',
+    },
+    {
+      id: 'music',
+      name: '音乐',
+      icon: Music2,
+      title: '给此刻的灵感，一段旋律。',
+      caption: '写下情绪、曲风与乐器，让想法被听见。',
+      label: '音乐创作',
+    },
+    {
+      id: 'slides',
+      name: '演示文稿',
+      icon: Presentation,
+      title: '把一个好想法，讲得更清楚。',
+      caption: '在左侧编写内容，右侧即时呈现。',
+      label: '演示编辑',
+    },
+    {
+      id: 'theme',
+      name: 'Marp 主题',
+      icon: Palette,
+      title: '为你的表达，定下自己的风格。',
+      caption: '调整配色与排版，保存为可反复使用的主题。',
+      label: '主题设计',
+    },
   ];
+  const currentTab = tabs.find((item) => item.id === tab) || tabs[0];
+  const askAgent = () =>
+    onAgent(
+      tab === 'image'
+        ? '我想创作一张图片。请先帮我完善画面描述、构图和风格，再使用 generate_image 完成创作。'
+        : tab === 'music'
+          ? '我想创作一段音乐。请先帮我确定曲风、乐器、氛围和时长，再使用 generate_music 完成创作。'
+          : tab === 'slides'
+            ? '帮我生成一份完整的 Marp 演示文稿。请先问我主题、受众和页数，再使用 create_slides 工具完成并保存。'
+            : '帮我设计一款独特的 Marp 演示文稿主题。请先询问我想要的配色、风格和用途，生成完整 CSS 后使用 create_marp_theme 工具保存。',
+    );
   return (
-    <div className="content-page studio-page">
-      <PageIntro eyebrow="MAKE ROOM FOR YOUR IMAGINATION" title="工作室" />
-      <div className="studio-tabs">
-        {tabs.map(({ id, name, icon: Icon }) => (
-          <button
-            key={id}
-            className={tab === id ? 'active' : ''}
-            disabled={busy}
-            onClick={() => setTab(id)}
-          >
-            <Icon size={17} />
-            {name}
-          </button>
-        ))}
+    <div
+      className="content-page studio-page"
+      onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          void generate();
+        }
+      }}
+    >
+      <PageIntro
+        eyebrow="LIVRA / CREATIVE SPACE"
+        title="工作室"
+        description={currentTab.caption}
+        action={
+          <Button variant="ghost" onClick={askAgent} disabled={busy}>
+            <Sparkles size={15} />
+            和伙伴一起创作
+            <ArrowUpRight size={14} />
+          </Button>
+        }
+      />
+      <div className="studio-navigation">
+        <div className="studio-tabs" role="tablist" aria-label="创作类型">
+          {tabs.map(({ id, name, icon: Icon }) => (
+            <button
+              key={id}
+              className={tab === id ? 'active' : ''}
+              disabled={busy}
+              onClick={() => setTab(id)}
+              role="tab"
+              id={'studio-tab-' + id}
+              aria-controls="studio-workbench"
+              aria-selected={tab === id}
+              tabIndex={tab === id ? 0 : -1}
+              onKeyDown={(e) => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key) || busy) return;
+                e.preventDefault();
+                const next =
+                  e.key === 'Home'
+                    ? 0
+                    : e.key === 'End'
+                      ? tabs.length - 1
+                      : (tabs.findIndex((item) => item.id === tab) +
+                          (e.key === 'ArrowRight' ? 1 : -1) +
+                          tabs.length) %
+                        tabs.length;
+                setTab(tabs[next].id);
+                document.getElementById('studio-tab-' + tabs[next].id)?.focus();
+              }}
+            >
+              <Icon size={17} />
+              {name}
+            </button>
+          ))}
+        </div>
+        <span className="studio-draft-note">
+          <Check size={12} />
+          草稿自动保留
+        </span>
       </div>
       <div
         className={'studio-workbench ' + (['slides', 'theme'].includes(tab) ? 'editor-mode' : '')}
+        id="studio-workbench"
+        role="tabpanel"
+        aria-labelledby={'studio-tab-' + currentTab.id}
       >
         <div className="studio-controls">
+          <div className="studio-panel-intro">
+            <span className="studio-panel-icon">
+              <currentTab.icon size={18} />
+            </span>
+            <div>
+              <h2>{currentTab.label}</h2>
+              <p>
+                {tab === 'image'
+                  ? '描述、参考与画面设置'
+                  : tab === 'music'
+                    ? '灵感、歌词与声音设置'
+                    : '编辑源文件，实时查看效果'}
+              </p>
+            </div>
+          </div>
           {['image', 'music'].includes(tab) ? (
             <>
               <Field label={tab === 'image' ? '画面描述' : '音乐灵感'}>
@@ -238,7 +378,22 @@ export function Studio({
               {tab === 'image' ? (
                 <>
                   <Field label="参考图（可选）">
-                    <div className="reference-upload">
+                    <div
+                      className={'reference-upload' + (referenceDragging ? ' is-dragging' : '')}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setReferenceDragging(true);
+                      }}
+                      onDragLeave={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node))
+                          setReferenceDragging(false);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setReferenceDragging(false);
+                        void addReference(e.dataTransfer.files[0]);
+                      }}
+                    >
                       {reference ? (
                         <>
                           <img src={reference} alt="参考图" />
@@ -248,8 +403,11 @@ export function Studio({
                         </>
                       ) : (
                         <button onClick={() => referenceRef.current?.click()}>
-                          <Plus size={21} />
-                          <span>添加一张参考图</span>
+                          <ImagePlus size={22} />
+                          <span>
+                            添加参考图<small>点击上传，或拖动图片到这里</small>
+                          </span>
+                          <Plus size={15} />
                         </button>
                       )}
                     </div>
@@ -260,13 +418,8 @@ export function Studio({
                       accept="image/png,image/jpeg,image/webp"
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
-                        if (file)
-                          try {
-                            const attachment = await readAttachment(file);
-                            setReference(attachment.data);
-                          } catch (e) {
-                            notify((e as Error).message, 'error');
-                          }
+                        e.target.value = '';
+                        await addReference(file);
                       }}
                     />
                   </Field>
@@ -281,6 +434,7 @@ export function Studio({
                           key={s.value}
                           className={size === s.value ? 'active' : ''}
                           onClick={() => setSize(s.value)}
+                          aria-pressed={size === s.value}
                         >
                           <span className={s.shape} />
                           {s.label}
@@ -410,7 +564,7 @@ export function Studio({
             </>
           )}
           {error && (
-            <div className="error-box">
+            <div className="error-box" role="alert">
               <CircleHelp size={16} />
               {error}
             </div>
@@ -419,7 +573,7 @@ export function Studio({
             {busy ? (
               <>
                 <Button variant="primary" busy>
-                  正在创作…
+                  正在创作… {elapsed}s
                 </Button>
                 <IconButton label="停止创作" onClick={() => controller.current?.abort()}>
                   <Square size={15} />
@@ -439,8 +593,25 @@ export function Studio({
               </Button>
             )}
           </div>
+          <p className="studio-save-note">
+            {['image', 'music'].includes(tab)
+              ? '生成后自动保存到作品集'
+              : '保存后可在作品集中再次使用'}
+            <kbd>Ctrl ↵</kbd>
+          </p>
         </div>
-        <div className="studio-canvas">
+        <div className={'studio-canvas canvas-' + tab} aria-busy={busy || previewBusy}>
+          {!['slides', 'theme'].includes(tab) && (
+            <div className="canvas-heading">
+              <span>
+                <i className="canvas-status-dot" />
+                {busy ? '创作进行中' : result ? '你的作品' : '创作预览'}
+              </span>
+              <span className="canvas-format">
+                {tab === 'image' ? size.replace('x', ' × ') : duration + ' 秒'}
+              </span>
+            </div>
+          )}
           {['slides', 'theme'].includes(tab) ? (
             <>
               <div className="canvas-heading">
@@ -449,6 +620,12 @@ export function Studio({
               </div>
               {previewError ? (
                 <div className="error-box">{previewError}</div>
+              ) : !preview && previewBusy ? (
+                <div className="studio-preview-loading" role="status">
+                  <Presentation size={28} />
+                  <span>正在准备预览…</span>
+                  <i />
+                </div>
               ) : (
                 <iframe
                   className="slide-preview"
@@ -484,7 +661,13 @@ export function Studio({
                 <i />
               </div>
               <h2>正在生成</h2>
-              <p>完成后会自动保存，你也可以随时停止。</p>
+              <p>
+                {tab === 'image' ? '正在描绘你的灵感，稍等片刻。' : '正在谱写你的旋律，稍等片刻。'}
+              </p>
+              <span className="generation-time">
+                <Clock3 size={13} />
+                {elapsed} 秒
+              </span>
               <div className="loading-bars">
                 <i />
                 <i />
@@ -493,10 +676,6 @@ export function Studio({
             </div>
           ) : result ? (
             <div className="studio-result">
-              <div className="canvas-heading">
-                <span>生成结果</span>
-                <Badge color="green">已保存</Badge>
-              </div>
               {result.kind === 'image' ? (
                 <div className="generated-images">
                   {result.data.images.map((image: string, index: number) => (
@@ -536,32 +715,69 @@ export function Studio({
                 </div>
               )}
               <div className="studio-result-caption">
+                <div>
+                  <Badge color="green">已保存</Badge>
+                  <small>{result.data.model}</small>
+                </div>
                 <p>{result.data.prompt}</p>
-                <small>{result.data.model}</small>
               </div>
             </div>
           ) : (
             <div className="studio-empty">
-              <div className={'creative-illustration ' + (tab === 'music' ? 'musical' : '')}>
-                <div className="illustration-card back" />
-                <div className="illustration-card front">
+              <div
+                className={'studio-artwork ' + (tab === 'music' ? 'musical' : '')}
+                aria-hidden="true"
+              >
+                <div className="artwork-frame">
+                  <span className="artwork-topline">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
                   {tab === 'image' ? (
-                    <>
-                      <div className="art-sun" />
-                      <div className="art-hill one" />
-                      <div className="art-hill two" />
-                    </>
+                    <div className="artwork-landscape">
+                      <span className="artwork-sun" />
+                      <span className="artwork-mountain back" />
+                      <span className="artwork-mountain front" />
+                      <span className="artwork-grain" />
+                    </div>
                   ) : (
-                    <Music2 size={55} />
+                    <div className="artwork-wave">
+                      {[18, 28, 42, 25, 54, 72, 46, 84, 60, 38, 68, 48, 30, 50, 24, 14].map(
+                        (height, index) => (
+                          <i key={index} style={{ height: height + '%' }} />
+                        ),
+                      )}
+                    </div>
                   )}
+                  <div className="artwork-caption">
+                    <span />
+                    <i />
+                    <i />
+                  </div>
                 </div>
+                <span className="artwork-spark">
+                  <Sparkles size={18} />
+                </span>
               </div>
-              <h2>{tab === 'image' ? '画布已就绪' : '准备一段新旋律'}</h2>
+              <span className="studio-empty-eyebrow">
+                {tab === 'image' ? 'A LITTLE IDEA, A NEW PERSPECTIVE' : 'FIND YOUR OWN RHYTHM'}
+              </span>
+              <h2>{currentTab.title}</h2>
               <p>
                 {tab === 'image'
                   ? '填写画面描述，或添加参考图。生成结果会显示在这里。'
                   : '描述曲风、乐器和氛围，按需填写歌词。'}
               </p>
+              <button
+                className="studio-empty-start"
+                onClick={() =>
+                  document.querySelector<HTMLTextAreaElement>('.studio-controls textarea')?.focus()
+                }
+              >
+                {tab === 'image' ? '写下第一句灵感' : '写下你想听的声音'}
+                <ArrowRight size={14} />
+              </button>
             </div>
           )}
         </div>

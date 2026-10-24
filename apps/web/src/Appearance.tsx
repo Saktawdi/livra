@@ -4,6 +4,7 @@ import { skinPackageSchema, skinSettings } from '@livra/shared';
 import { Button, Field, Section, Select, Toggle } from './ui';
 import { api, download } from './api';
 import { SkinPreview } from './SkinArtifact';
+import { Avatar, AvatarPicker } from './Avatar';
 import type { Notify } from './App';
 
 export const skins = [
@@ -123,9 +124,11 @@ export function Appearance({
                   : '让每一天，轻一点。'}
             </h4>
             <div className="message user">
+              <Avatar role="user" src={settings.userAvatar} />
               <div className="message-body">一起探索新的想法吧。</div>
             </div>
             <div className="message assistant">
+              <Avatar role="assistant" src={settings.agentAvatar} />
               <div className="message-body">我在这里，随时出发。</div>
             </div>
             <div className="preview-composer">
@@ -134,6 +137,27 @@ export function Appearance({
           </div>
         </div>
       )}
+      <Section
+        title="对话头像"
+        description="你的消息在右，伙伴的回答在左。头像图片会随设置一起保存。"
+      >
+        <div className="avatar-settings">
+          <AvatarPicker
+            label="我的头像"
+            role="user"
+            src={settings.userAvatar}
+            onChange={(userAvatar) => patch({ userAvatar })}
+            notify={notify}
+          />
+          <AvatarPicker
+            label="伙伴头像"
+            role="assistant"
+            src={settings.agentAvatar}
+            onChange={(agentAvatar) => patch({ agentAvatar })}
+            notify={notify}
+          />
+        </div>
+      </Section>
       <Section
         title="让 Agent 设计皮肤"
         description="描述想要的空间，伙伴会生成可预览、复用的皮肤作品。"
