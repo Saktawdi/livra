@@ -2,14 +2,14 @@ import { z } from 'zod';
 import type { Conversation } from './index';
 
 export const conversationColors = [
-  { value: '#35d99e', name: '薄荷' },
-  { value: '#67e8f9', name: '青空' },
-  { value: '#7cc7f7', name: '星蓝' },
-  { value: '#b4a3f7', name: '鸢尾' },
-  { value: '#f5b84f', name: '琥珀' },
-  { value: '#fb7185', name: '珊瑚' },
-  { value: '#f472b6', name: '蔷薇' },
-  { value: '#a3e635', name: '新芽' },
+  { name: '绿色', value: '#4d9d80' },
+  { name: '青色', value: '#399aab' },
+  { name: '蓝色', value: '#638ed5' },
+  { name: '紫色', value: '#a086cf' },
+  { name: '琥珀', value: '#c99440' },
+  { name: '玫红', value: '#cc728e' },
+  { name: '珊瑚', value: '#d17a60' },
+  { name: '灰色', value: '#88948d' },
 ] as const;
 const color = z.string().regex(/^#[a-fA-F0-9]{6}$/);
 export const conversationGroupSchema = z.object({

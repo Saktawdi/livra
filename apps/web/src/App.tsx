@@ -361,6 +361,7 @@ export function App() {
     });
     setOrganization(next);
     if (draftGroupId && !next.groups.some((g) => g.id === draftGroupId)) setDraftGroupId(null);
+    return next;
   }
   if (loading)
     return (
