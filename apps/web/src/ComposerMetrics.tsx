@@ -37,7 +37,9 @@ export function ComposerMetrics({
     estimateTextTokens(draft) +
     estimateAttachments(attachments);
   const estimated = !measured || !!draft || !!attachments.length;
-  const limit = settings.providers.find((p) => p.id === provider)?.contextWindows?.[model];
+  const currentProvider = settings.providers.find((p) => p.id === provider);
+  const limit =
+    currentProvider?.modelConfigs?.[model]?.context ?? currentProvider?.contextWindows?.[model];
   const percent = limit ? Math.min(100, (tokens / limit) * 100) : 0;
   const g = sameModel ? last?.generation : undefined;
   const rate = g && g.durationMs >= 100 ? g.outputTokens / (g.durationMs / 1000) : 0;

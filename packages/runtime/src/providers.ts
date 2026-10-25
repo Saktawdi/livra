@@ -64,12 +64,22 @@ export async function* sse(response: Response): AsyncGenerator<any> {
     await reader.cancel().catch(() => {});
   }
 }
+const keyPositions = new Map<string, number>();
+export function withProviderKey(provider: Provider): Provider {
+  if (!provider.keys) return provider;
+  const keys = provider.keys.filter(Boolean);
+  const identity = provider.id + ':' + provider.baseUrl;
+  const position = keyPositions.get(identity) || 0;
+  keyPositions.set(identity, position + 1);
+  return { ...provider, apiKey: keys[position % keys.length] || '' };
+}
 const auth = (provider: Provider): Record<string, string> => ({
   'Content-Type': 'application/json',
   ...(provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : {}),
 });
 export async function listModels(provider: Provider, signal?: AbortSignal) {
   if (provider.protocol === 'fish') return fishModels;
+  provider = withProviderKey(provider);
   let headers = auth(provider);
   delete headers['Content-Type'];
   if (provider.protocol === 'anthropic')
@@ -200,6 +210,17 @@ export async function complete(
   signal: AbortSignal,
   emit: (type: 'delta' | 'reasoning', text: string) => void,
 ): Promise<Completion> {
+  if (provider.enabled === false) throw Error('供应商已停用');
+  provider = withProviderKey(provider);
+  const config = provider.modelConfigs?.[model] || {};
+  if (config.tools === false) tools = [];
+  reasoning =
+    config.reasoning === false
+      ? undefined
+      : reasoning && reasoning !== 'auto'
+        ? reasoning
+        : provider.defaultEffort;
+  const max = config.maxTokens || Math.min(config.output || 8192, 8192);
   let path = 'chat/completions';
   let headers = auth(provider);
   const body: any = {
@@ -207,11 +228,27 @@ export async function complete(
     messages,
     stream: true,
     stream_options: { include_usage: true },
+    [/^(?:o[1345](?:-|$)|gpt-(?:[5-9]|1\d)|chatgpt-)/i.test(model)
+      ? 'max_completion_tokens'
+      : 'max_tokens']: max,
     ...(tools.length ? { tools } : {}),
-    ...(reasoning && reasoning !== 'auto' ? { reasoning_effort: reasoning } : {}),
+    ...(reasoning && reasoning !== 'auto'
+      ? config.reasoningMode === 'toggle'
+        ? { enable_thinking: reasoning !== 'none' }
+        : { reasoning_effort: reasoning }
+      : {}),
+    ...(typeof config.temperature === 'number' &&
+    (!reasoning || ['auto', 'none'].includes(reasoning))
+      ? { temperature: config.temperature }
+      : {}),
   };
   if (provider.protocol === 'responses') {
     path = 'responses';
+    delete body.max_tokens;
+    delete body.max_completion_tokens;
+    delete body.enable_thinking;
+    delete body.temperature;
+    body.max_output_tokens = max;
     delete body.messages;
     delete body.stream_options;
     delete body.reasoning_effort;
@@ -223,6 +260,9 @@ export async function complete(
   }
   if (provider.protocol === 'anthropic') {
     path = 'messages';
+    delete body.max_completion_tokens;
+    delete body.enable_thinking;
+    delete body.temperature;
     headers = {
       'Content-Type': 'application/json',
       'x-api-key': provider.apiKey || '',
@@ -238,24 +278,70 @@ export async function complete(
       .filter((m) => m.role === 'system')
       .map((m) => m.content)
       .join('\n');
-    body.max_tokens = 8192;
+    body.max_tokens = max;
     if (tools.length)
       body.tools = tools.map((t) => ({
         name: t.function.name,
         description: t.function.description,
         input_schema: t.function.parameters,
       }));
-    if (reasoning && reasoning !== 'auto' && reasoning !== 'none')
-      body.thinking = {
-        type: 'enabled',
-        budget_tokens: reasoning === 'high' ? 4096 : reasoning === 'medium' ? 2048 : 1024,
-      };
+    if (reasoning && reasoning !== 'auto' && reasoning !== 'none') {
+      if (max <= 1024) throw Error('启用 Anthropic 思考时，最大输出 Token 需要大于 1024');
+      const adaptive = /claude-(?:opus|sonnet)-(?:4[.-][6-9]|[5-9])/i.test(model);
+      if (config.reasoningMode === 'budget' || !adaptive)
+        body.thinking = {
+          type: 'enabled',
+          budget_tokens: Math.min(
+            max - 1,
+            Math.max(
+              1024,
+              (
+                { low: 1024, medium: 2048, high: 4096, xhigh: 6144, max: 7168 } as Record<
+                  string,
+                  number
+                >
+              )[reasoning] || 2048,
+            ),
+          ),
+        };
+      else {
+        body.thinking = { type: 'adaptive' };
+        body.output_config = { effort: reasoning };
+      }
+    } else if (reasoning === 'none') body.thinking = { type: 'disabled' };
   }
   if (provider.protocol === 'gemini') {
     path = `models/${encodeURIComponent(model.replace(/^models\//, ''))}:streamGenerateContent?alt=sse`;
     headers = { 'Content-Type': 'application/json', 'x-goog-api-key': provider.apiKey || '' };
     for (const key of Object.keys(body)) delete body[key];
     body.contents = geminiMessages(messages);
+    const budget = config.reasoningMode === 'budget' || /^gemini-2/i.test(model);
+    body.generationConfig = {
+      maxOutputTokens: max,
+      ...(reasoning && reasoning !== 'auto'
+        ? {
+            thinkingConfig:
+              reasoning === 'none'
+                ? { thinkingBudget: 0 }
+                : budget
+                  ? {
+                      thinkingBudget:
+                        (
+                          {
+                            minimal: 512,
+                            low: 1024,
+                            medium: 4096,
+                            high: 8192,
+                            xhigh: 16384,
+                            max: 24576,
+                          } as Record<string, number>
+                        )[reasoning] || 4096,
+                      includeThoughts: true,
+                    }
+                  : { thinkingLevel: reasoning, includeThoughts: true },
+          }
+        : {}),
+    };
     body.systemInstruction = {
       parts: [
         {

@@ -121,7 +121,8 @@ export function Field({
   const control =
     isValidElement(children) &&
     (children.type === Select ||
-      (typeof children.type === 'string' && ['input', 'textarea'].includes(children.type)));
+      (typeof children.type === 'string' &&
+        ['input', 'textarea', 'select'].includes(children.type)));
   return (
     <div className="field">
       {control ? (

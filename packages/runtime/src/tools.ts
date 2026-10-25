@@ -24,7 +24,7 @@ import { searchWeb } from './search.ts';
 import type { RuntimeStore as Store } from './store.ts';
 import type { LiveModelService } from './live-models.ts';
 import { network, endpoint, readJson, safeError } from './network.ts';
-import type { FunctionTool } from './providers.ts';
+import { withProviderKey, type FunctionTool } from './providers.ts';
 
 export type Context = {
   store: Store;
@@ -453,7 +453,7 @@ export function registry(ctx: Context): Map<string, Registered> {
     },
   });
   const imageProvider = ctx.settings.providers.find(
-    (p) => p.id === ctx.settings.imageProvider && p.kind === 'image',
+    (p) => p.id === ctx.settings.imageProvider && p.kind === 'image' && p.enabled !== false,
   );
   add({
     name: 'generate_image',
@@ -477,6 +477,7 @@ export function registry(ctx: Context): Map<string, Registered> {
     }),
     execute: async ({ prompt, size, image }) => {
       if (!imageProvider) throw Error('请先连接生图服务');
+      const provider = withProviderKey(imageProvider);
       let images: string[] = [];
       if (imageProvider.protocol === 'gemini') {
         const parts: any[] = [{ text: prompt }];
@@ -496,7 +497,7 @@ export function registry(ctx: Context): Map<string, Registered> {
               signal: ctx.signal,
               headers: {
                 'Content-Type': 'application/json',
-                'x-goog-api-key': imageProvider.apiKey || '',
+                'x-goog-api-key': provider.apiKey || '',
               },
               body: JSON.stringify({
                 contents: [{ parts }],
@@ -519,7 +520,7 @@ export function registry(ctx: Context): Map<string, Registered> {
         let body: BodyInit;
         let path = 'images/generations';
         const headers: Record<string, string> = {
-          ...(imageProvider.apiKey ? { Authorization: `Bearer ${imageProvider.apiKey}` } : {}),
+          ...(provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : {}),
         };
         if (image) {
           path = 'images/edits';
@@ -568,7 +569,7 @@ export function registry(ctx: Context): Map<string, Registered> {
     },
   });
   const musicProvider = ctx.settings.providers.find(
-    (p) => p.id === ctx.settings.musicProvider && p.kind === 'music',
+    (p) => p.id === ctx.settings.musicProvider && p.kind === 'music' && p.enabled !== false,
   );
   add({
     name: 'generate_music',
@@ -593,13 +594,14 @@ export function registry(ctx: Context): Map<string, Registered> {
     }),
     execute: async ({ prompt, lyrics, duration }) => {
       if (!musicProvider) throw Error('请先连接音乐服务');
+      const provider = withProviderKey(musicProvider);
       const data = await readJson(
         await network(endpoint(musicProvider.baseUrl, 'audio/generations'), {
           method: 'POST',
           signal: ctx.signal,
           headers: {
             'Content-Type': 'application/json',
-            ...(musicProvider.apiKey ? { Authorization: `Bearer ${musicProvider.apiKey}` } : {}),
+            ...(provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : {}),
           },
           body: JSON.stringify({ model: ctx.settings.musicModel, prompt, lyrics, duration }),
         }),
@@ -686,7 +688,7 @@ export async function executeTool(name: string, args: unknown, ctx: Context, man
   } catch (error) {
     throw Error(
       safeError(error, [
-        ...ctx.settings.providers.map((p) => p.apiKey),
+        ...ctx.settings.providers.flatMap((p) => [p.apiKey, ...(p.keys || [])]),
         ...ctx.settings.customTools.map((t) => t.apiKey),
         ctx.settings.searchKey,
         ctx.settings.sakta?.token,

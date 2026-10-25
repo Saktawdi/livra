@@ -1,20 +1,41 @@
 import { appearanceSchema } from './skins.ts';
 export * from './skins.ts';
 export * from './conversation-organization.ts';
+export { matchModel, flattenCatalog } from './model-catalog.ts';
 import { z } from 'zod';
 export { applyMarpTheme, marpThemeName } from './marp';
 
 export const moodSchema = z.enum(['neutral', 'happy', 'thinking', 'concerned', 'excited', 'calm']);
 export type Mood = z.infer<typeof moodSchema>;
 export type LiveState = 'idle' | 'thinking' | 'speaking' | 'working' | 'listening' | 'error';
+export const modelConfigSchema = z.object({
+  vision: z.boolean().optional(),
+  reasoning: z.boolean().optional(),
+  tools: z.boolean().optional(),
+  context: z.number().int().positive().max(100000000).optional(),
+  output: z.number().int().positive().max(10000000).optional(),
+  levels: z.array(z.string().min(1).max(80)).max(40).optional(),
+  matchedId: z.string().max(300).optional(),
+  source: z.string().max(100).optional(),
+  reasoningMode: z.enum(['effort', 'toggle', 'budget']).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().min(128).max(1000000).optional(),
+});
+export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export const providerSchema = z
   .object({
     id: z.string().min(1).max(80),
     name: z.string().min(1).max(80),
-    baseUrl: z.string().url().max(1000),
+    baseUrl: z.union([z.string().url().max(1000), z.literal('')]),
     protocol: z.enum(['openai', 'responses', 'anthropic', 'gemini', 'fish']).default('openai'),
     apiKey: z.string().max(8000).optional(),
     hasKey: z.boolean().optional(),
+    keys: z.array(z.string().min(1).max(8000)).max(500).optional(),
+    keyCount: z.number().int().nonnegative().optional(),
+    enabled: z.boolean().optional(),
+    defaultEffort: z.string().max(80).optional(),
+    availableModels: z.array(z.string().min(1).max(200)).max(20000).optional(),
+    modelConfigs: z.record(z.string(), modelConfigSchema).optional(),
     models: z.array(z.string().min(1).max(200)).max(500).default([]),
     contextWindows: z.record(z.string(), z.number().int().min(256).max(10000000)).optional(),
     kind: z.enum(['chat', 'image', 'music', 'speech']).default('chat'),
@@ -519,7 +540,11 @@ export const defaultSettings: Settings = settingsSchema.parse({ personas: defaul
 export function publicSettings(settings: Settings): Settings {
   return {
     ...settings,
-    providers: settings.providers.map(({ apiKey, ...p }) => ({ ...p, hasKey: !!apiKey })),
+    providers: settings.providers.map(({ apiKey, keys, ...p }) => ({
+      ...p,
+      hasKey: !!(keys?.length || apiKey),
+      keyCount: keys?.length ?? Number(!!apiKey),
+    })),
     customTools: settings.customTools.map(({ apiKey, ...t }) => ({ ...t, hasKey: !!apiKey })),
     searchKey: undefined,
     hasSearchKey: !!settings.searchKey,

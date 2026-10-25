@@ -2,6 +2,7 @@ import { Buffer } from 'buffer';
 import { environment } from './environment.ts';
 import type { Provider, Settings } from '@livra/shared';
 import { endpoint, network, readJson, safeError } from './network.ts';
+import { withProviderKey } from './providers.ts';
 
 export async function synthesize(
   provider: Provider,
@@ -12,6 +13,8 @@ export async function synthesize(
   signal: AbortSignal,
   request = network,
 ) {
+  if (provider.enabled === false) throw Error('供应商已停用');
+  provider = withProviderKey(provider);
   const fish = provider.protocol === 'fish';
   if (!fish && provider.protocol !== 'openai')
     throw Error('此语音连接需要选择 Fish Audio 或 OpenAI 兼容协议');
@@ -54,9 +57,9 @@ export async function synthesize(
     if (signal.aborted) throw error;
     const cause =
       error instanceof Error && error.cause instanceof Error
-        ? `（${safeError(error.cause, [provider.apiKey])}）`
+        ? `（${safeError(error.cause, [provider.apiKey, ...(provider.keys || [])])}）`
         : '';
-    const detail = safeError(error, [provider.apiKey]) + cause;
+    const detail = safeError(error, [provider.apiKey, ...(provider.keys || [])]) + cause;
     throw Object.assign(Error(`${fish ? 'Fish Audio' : '语音服务'}合成失败：${detail}`), {
       statusCode: error instanceof Error && error.name === 'TimeoutError' ? 504 : 502,
     });

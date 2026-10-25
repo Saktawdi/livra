@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Brain, Check, ChevronDown } from 'lucide-react';
 
-const levels = [
+const defaultLevels = [
   { id: 'auto', label: '自动' },
   { id: 'none', label: '关闭' },
   { id: 'minimal', label: '最低' },
@@ -9,16 +9,26 @@ const levels = [
   { id: 'medium', label: '中' },
   { id: 'high', label: '高' },
   { id: 'xhigh', label: '最高' },
+  { id: 'max', label: '最大' },
 ];
 export function ReasoningPicker({
   value,
   onChange,
   disabled,
+  levels: supported,
 }: {
+  levels?: string[];
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
 }) {
+  const levels = supported?.length
+    ? [...new Set(['auto', ...supported])].map((id) => ({
+        id,
+        label:
+          defaultLevels.find((level) => level.id === id)?.label || (id === 'max' ? '最大' : id),
+      }))
+    : defaultLevels;
   const [open, setOpen] = useState(false),
     [placement, setPlacement] = useState({ side: 'above', height: 280 });
   const host = useRef<HTMLDivElement>(null),

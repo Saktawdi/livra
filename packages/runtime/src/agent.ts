@@ -18,7 +18,7 @@ export function resolveProvider(settings: Settings, id: string): Provider | unde
       models: [],
       kind: 'chat',
     };
-  return settings.providers.find((p) => p.id === id && p.kind === 'chat');
+  return settings.providers.find((p) => p.id === id && p.kind === 'chat' && p.enabled !== false);
 }
 export type Run = {
   id: string;
@@ -176,7 +176,7 @@ export async function runAgent(
           outcome = await executeTool(tool.name, args, ctx);
         } catch (error) {
           failed = true;
-          outcome = { error: safeError(error, [provider.apiKey]) };
+          outcome = { error: safeError(error, [provider.apiKey, ...(provider.keys || [])]) };
         }
         const stored = reply.tools!.find((t) => t.id === tool.id)!;
         stored.status = failed ? 'error' : 'done';
@@ -205,7 +205,12 @@ export async function runAgent(
     emit({ type: 'done', conversationId: conversation.id });
   } catch (error) {
     if (ctx.signal.aborted) reply.interrupted = true;
-    else reply.error = safeError(error, [provider.apiKey, ctx.settings.sakta?.token]);
+    else
+      reply.error = safeError(error, [
+        provider.apiKey,
+        ...(provider.keys || []),
+        ctx.settings.sakta?.token,
+      ]);
     // Drop incomplete tool pairs from future context; keep the visible partial response.
     const repaired = history.slice();
     while (repaired.at(-1)?.role === 'tool') repaired.pop();

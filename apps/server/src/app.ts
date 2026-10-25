@@ -1,3 +1,4 @@
+import { ModelCatalogService } from '@livra/runtime/model-catalog';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
@@ -63,6 +64,7 @@ export async function createApp(
   );
   const liveModels = new LiveModelService(store, options.liveModelFetch);
   const vits = new VitsService(options.vitsFetch);
+  const modelCatalog = new ModelCatalogService(store);
   app.decorateRequest('workspace', '');
   await app.register(cookie);
   await app.register(rateLimit, { max: 240, timeWindow: '1 minute' });
@@ -117,7 +119,7 @@ export async function createApp(
   app.setErrorHandler((error, req, reply) => {
     const settings = req.workspace ? store.settings(req.workspace) : undefined;
     const secrets = [
-      ...(settings?.providers.map((p) => p.apiKey) || []),
+      ...(settings?.providers.flatMap((p) => [p.apiKey, ...(p.keys || [])]) || []),
       ...(settings?.customTools.map((t) => t.apiKey) || []),
       settings?.sakta?.token,
       settings?.searchKey,
@@ -194,9 +196,12 @@ export async function createApp(
     } catch {
       throw Object.assign(Error('自定义工具的 JSON Schema 无效'), { statusCode: 400 });
     }
-    for (const p of settings.providers)
-      if (p.apiKey === undefined)
-        p.apiKey = previous.providers.find((old) => old.id === p.id)?.apiKey;
+    for (const p of settings.providers) {
+      const old = previous.providers.find((item) => item.id === p.id);
+      if (p.keys === undefined && p.apiKey === undefined) p.keys = old?.keys;
+      if (p.apiKey === undefined) p.apiKey = old?.apiKey;
+      if (p.keys !== undefined) p.apiKey = p.keys[0] || '';
+    }
     for (const t of settings.customTools)
       if (t.apiKey === undefined)
         t.apiKey = previous.customTools.find((old) => old.name === t.name)?.apiKey;
@@ -205,17 +210,17 @@ export async function createApp(
     store.saveSettings(req.workspace, settings);
     return publicSettings(settings);
   });
+  app.get('/api/model-catalog', async (req) => modelCatalog.load(req.workspace));
   app.post('/api/providers/models', async (req) => {
     const input = z.object({ provider: providerSchema }).parse(req.body);
     const provider = input.provider;
-    if (provider.apiKey === undefined)
-      provider.apiKey = store
-        .settings(req.workspace)
-        .providers.find((p) => p.id === provider.id)?.apiKey;
+    const saved = store.settings(req.workspace).providers.find((p) => p.id === provider.id);
+    if (provider.keys === undefined && provider.apiKey === undefined) provider.keys = saved?.keys;
+    if (provider.apiKey === undefined) provider.apiKey = saved?.apiKey;
     try {
       return { models: await listModels(provider) };
     } catch (error) {
-      throw Error(safeError(error, [provider.apiKey]));
+      throw Error(safeError(error, [provider.apiKey, ...(provider.keys || [])]));
     }
   });
   app.get('/api/live-models', async (req) => liveModelCatalog(store.settings(req.workspace)));
@@ -455,7 +460,10 @@ export async function createApp(
       .parse(req.body);
     const settings = data.settings;
     delete settings.sakta;
-    for (const p of settings.providers) delete p.apiKey;
+    for (const p of settings.providers) {
+      delete p.apiKey;
+      delete p.keys;
+    }
     for (const t of settings.customTools) delete t.apiKey;
     delete settings.searchKey;
     // Validate the entire backup before the transaction, and rebuild protocol history.
@@ -583,7 +591,7 @@ export async function createApp(
         providerId: z.string(),
         model: z.string().min(1).max(200),
         content: z.string().max(100000),
-        reasoning: z.enum(['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
+        reasoning: z.string().min(1).max(80).optional(),
         attachments: z
           .array(
             z.object({

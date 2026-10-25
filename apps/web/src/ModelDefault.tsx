@@ -36,7 +36,7 @@ export function ModelDefault({
           { value: '|', label: '暂未选择' },
           ...remoteModels.map((m) => ({ value: 'sakta|' + m, label: m, group: 'Sakta' })),
           ...draft.providers
-            .filter((p) => p.kind === kind)
+            .filter((p) => p.kind === kind && p.enabled !== false)
             .flatMap((p) =>
               p.models.map((m) => ({ value: p.id + '|' + m, label: m, group: p.name })),
             ),

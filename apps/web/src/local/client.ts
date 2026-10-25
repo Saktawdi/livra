@@ -65,7 +65,7 @@ export async function localCommand<T>(path: string, options: RequestInit = {}): 
       );
     const settings = store.settings(workspace);
     const message = safeError(error, [
-      ...settings.providers.map((p) => p.apiKey),
+      ...settings.providers.flatMap((p) => [p.apiKey, ...(p.keys || [])]),
       ...settings.customTools.map((t) => t.apiKey),
       settings.searchKey,
       settings.sakta?.token,
@@ -79,7 +79,7 @@ const runInput = z.object({
   providerId: z.string(),
   model: z.string().min(1).max(200),
   content: z.string().max(100000),
-  reasoning: z.enum(['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
+  reasoning: z.string().min(1).max(80).optional(),
   attachments: z
     .array(
       z.object({

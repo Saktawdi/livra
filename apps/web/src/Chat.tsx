@@ -198,10 +198,18 @@ export function Chat({
   } = useVoice(settings, persona, notify);
   const options = [
     ...settings.providers
-      .filter((p) => p.kind === 'chat')
+      .filter((p) => p.kind === 'chat' && p.enabled !== false)
       .flatMap((p) => p.models.map((m) => ({ provider: p.id, name: p.name, model: m }))),
     ...remoteModels.models.map((m) => ({ provider: 'sakta', name: 'Sakta · 账号模型', model: m })),
   ];
+  const modelConfig = settings.providers.find((p) => p.id === providerId)?.modelConfigs?.[model];
+  useEffect(() => {
+    if (
+      modelConfig?.reasoning === false ||
+      (modelConfig?.levels?.length && !['auto', ...modelConfig.levels].includes(reasoning))
+    )
+      setReasoning('auto');
+  }, [providerId, model, modelConfig?.reasoning, JSON.stringify(modelConfig?.levels)]);
   const slashes = shortcuts.filter((s) => (s.command + ' ' + s.label).includes(draft.slice(0, 25)));
   const showSlash =
     draft.startsWith('/') && !draft.includes(' ') && !slashHidden && slashes.length > 0;
@@ -747,8 +755,13 @@ export function Chat({
                   onSelect={selectModel}
                   onSettings={onSettings}
                 />
-                {model && (
-                  <ReasoningPicker value={reasoning} onChange={setReasoning} disabled={busy} />
+                {model && modelConfig?.reasoning !== false && (
+                  <ReasoningPicker
+                    value={reasoning}
+                    onChange={setReasoning}
+                    disabled={busy}
+                    levels={modelConfig?.levels}
+                  />
                 )}
               </div>
               <div className="composer-right">

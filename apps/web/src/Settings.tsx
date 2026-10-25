@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Plus,
-  Trash2,
   Server,
   Palette,
   Globe,
@@ -14,16 +12,15 @@ import {
   Download,
   Upload,
   LogOut,
-  RefreshCw,
 } from 'lucide-react';
-import type { Provider, Settings } from '@livra/shared';
-import { providerSchema, settingsSchema, fishModels } from '@livra/shared';
+import type { Settings } from '@livra/shared';
+import { settingsSchema } from '@livra/shared';
 import { api, post, download } from './api';
-import { Button, IconButton, Field, Modal, Section, Badge, Select } from './ui';
+import { Button, Field, Modal, Section, Badge, Select } from './ui';
 import { ModelDefault } from './ModelDefault';
 import { VoiceSettings } from './VoiceSettings';
 import type { Notify } from './App';
-import { ModelSkeleton } from './ModelPicker';
+import { ProviderSettings } from './ProviderSettings';
 import { Appearance } from './Appearance';
 
 export function SettingsPanel({
@@ -49,8 +46,7 @@ export function SettingsPanel({
 }) {
   const [draft, setDraft] = useState(() => settingsSchema.parse(settings)),
     [tab, setTab] = useState(initialTab),
-    [saving, setSaving] = useState(false),
-    [providerId, setProviderId] = useState(settings.providers[0]?.id || '');
+    [saving, setSaving] = useState(false);
   const [username, setUsername] = useState(''),
     [password, setPassword] = useState(''),
     [loginBusy, setLoginBusy] = useState(false),
@@ -60,9 +56,8 @@ export function SettingsPanel({
   useEffect(() => {
     onPreview(draft);
   }, [draft, onPreview]);
-  const provider = draft.providers.find((p) => p.id === providerId) || draft.providers[0];
   const tabs = [
-    { id: 'models', title: '模型连接', icon: Server },
+    { id: 'models', title: '供应商与模型', icon: Server },
     { id: 'accounts', title: 'Sakta 账号', icon: UserRound },
     { id: 'appearance', title: '外观与动效', icon: Palette },
     { id: 'language', title: '语言与回复', icon: Globe },
@@ -81,72 +76,6 @@ export function SettingsPanel({
     } finally {
       setSaving(false);
     }
-  }
-  function removeProvider(id: string) {
-    patch({
-      providers: draft.providers.filter((p) => p.id !== id),
-      ...(draft.defaultProvider === id ? { defaultProvider: '', defaultModel: '' } : {}),
-      ...(draft.imageProvider === id ? { imageProvider: '', imageModel: '' } : {}),
-      ...(draft.musicProvider === id ? { musicProvider: '', musicModel: '' } : {}),
-      ...(draft.speechProvider === id ? { speechProvider: '' } : {}),
-      ...(draft.speechSummaryProvider === id
-        ? { speechSummaryProvider: '', speechSummaryModel: '' }
-        : {}),
-    });
-  }
-  function saveProvider(p: Provider) {
-    const providers = draft.providers.some((x) => x.id === p.id)
-      ? draft.providers.map((x) => (x.id === p.id ? p : x))
-      : [...draft.providers, p];
-    const defaults: Partial<Settings> = {};
-    if (
-      p.kind === 'chat' &&
-      (!draft.defaultProvider ||
-        (draft.defaultProvider === p.id && !p.models.includes(draft.defaultModel)))
-    ) {
-      defaults.defaultProvider = p.id;
-      defaults.defaultModel = p.models[0] || '';
-    }
-    if (
-      p.kind === 'image' &&
-      (!draft.imageProvider ||
-        (draft.imageProvider === p.id && !p.models.includes(draft.imageModel)))
-    ) {
-      defaults.imageProvider = p.id;
-      defaults.imageModel = p.models[0] || '';
-    }
-    if (
-      p.kind === 'music' &&
-      (!draft.musicProvider ||
-        (draft.musicProvider === p.id && !p.models.includes(draft.musicModel)))
-    ) {
-      defaults.musicProvider = p.id;
-      defaults.musicModel = p.models[0] || '';
-    }
-    if (
-      p.kind === 'speech' &&
-      (!draft.speechProvider ||
-        (draft.speechProvider === p.id && !p.models.includes(draft.speechModel)))
-    ) {
-      defaults.speechProvider = p.id;
-      defaults.speechModel = p.models[0] || 'tts-1';
-    }
-    if (p.kind !== 'chat' && draft.defaultProvider === p.id) {
-      defaults.defaultProvider = '';
-      defaults.defaultModel = '';
-    }
-    if (p.kind !== 'image' && draft.imageProvider === p.id) {
-      defaults.imageProvider = '';
-      defaults.imageModel = '';
-    }
-    if (p.kind !== 'music' && draft.musicProvider === p.id) {
-      defaults.musicProvider = '';
-      defaults.musicModel = '';
-    }
-    if (p.kind !== 'speech' && draft.speechProvider === p.id) {
-      defaults.speechProvider = '';
-    }
-    patch({ providers, ...defaults });
   }
   return (
     <Modal title="偏好设置" onClose={onClose} wide className="settings-dialog">
@@ -172,66 +101,8 @@ export function SettingsPanel({
         <div className="settings-content">
           {tab === 'models' && (
             <>
-              <Section title="模型连接" description="选择一个连接直接编辑，完成后统一保存设置。">
-                <div className="connections-workspace">
-                  <nav className="connections-list" aria-label="模型连接列表">
-                    {draft.providers.map((p) => (
-                      <button
-                        key={p.id}
-                        aria-current={provider?.id === p.id ? 'true' : undefined}
-                        onClick={() => setProviderId(p.id)}
-                      >
-                        <span className="connection-monogram">{p.name.slice(0, 1) || 'M'}</span>
-                        <span>
-                          <strong>{p.name || '未命名连接'}</strong>
-                          <small>
-                            {p.models.length} 个模型 · {p.protocol}
-                          </small>
-                        </span>
-                      </button>
-                    ))}
-                    <button
-                      className="connection-add"
-                      onClick={() => {
-                        const next = providerSchema.parse({
-                          id: crypto.randomUUID(),
-                          name: '我的模型服务',
-                          baseUrl: 'https://api.openai.com/v1',
-                        });
-                        patch({ providers: [...draft.providers, next] });
-                        setProviderId(next.id);
-                      }}
-                    >
-                      <Plus size={15} />
-                      添加模型连接
-                    </button>
-                  </nav>
-                  {provider ? (
-                    <div className="connection-detail">
-                      <div className="connection-heading">
-                        <h4>{provider.name || '未命名连接'}</h4>
-                        <IconButton
-                          label={'移除连接 ' + provider.name}
-                          onClick={() => removeProvider(provider.id)}
-                        >
-                          <Trash2 size={15} />
-                        </IconButton>
-                      </div>
-                      <ProviderEditor
-                        key={provider.id}
-                        provider={provider}
-                        onChange={saveProvider}
-                        notify={notify}
-                      />
-                    </div>
-                  ) : (
-                    <div className="connection-empty">
-                      <Server size={26} />
-                      <h4>连接你的模型服务</h4>
-                      <p>从左侧添加连接，填写地址后拉取模型，或手动添加模型 ID。</p>
-                    </div>
-                  )}
-                </div>
+              <Section title="供应商与模型">
+                <ProviderSettings settings={draft} onChange={setDraft} notify={notify} />
               </Section>
               <Section title="默认模型">
                 <div className="form-grid">
@@ -590,260 +461,5 @@ export function SettingsPanel({
         </div>
       </div>
     </Modal>
-  );
-}
-function ProviderEditor({
-  provider,
-  onChange,
-  notify,
-}: {
-  provider: Provider;
-  onChange: (p: Provider) => void;
-  notify: Notify;
-}) {
-  const [p, setP] = useState(provider),
-    [modelsText, setModelsText] = useState(provider.models.join('\n')),
-    [fetched, setFetched] = useState<string[]>([]),
-    [loading, setLoading] = useState(false),
-    [loadError, setLoadError] = useState(''),
-    [filter, setFilter] = useState('');
-  const patch = (data: Partial<Provider>) => setP((prev) => ({ ...prev, ...data }));
-  const selected = modelsText
-    .split(/[\n,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  useEffect(() => {
-    onChange({ ...p, models: [...new Set(selected)] });
-  }, [p, modelsText]);
-  const presets = [
-    { name: 'OpenAI 兼容', protocol: 'openai', url: 'https://api.openai.com/v1' },
-    { name: 'Anthropic', protocol: 'anthropic', url: 'https://api.anthropic.com/v1' },
-    { name: 'Gemini', protocol: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta' },
-    { name: 'Ollama', protocol: 'openai', url: 'http://localhost:11434/v1' },
-    { name: 'Fish Audio', protocol: 'fish', url: 'https://api.fish.audio/v1' },
-  ];
-  return (
-    <section className="provider-editor" aria-label="编辑模型连接">
-      <div>
-        <div className="preset-row">
-          {presets.map((preset) => (
-            <button
-              key={preset.name}
-              onClick={() => {
-                const fish = preset.protocol === 'fish';
-                patch({
-                  protocol: preset.protocol as any,
-                  baseUrl: preset.url,
-                  name: preset.name,
-                  kind: fish
-                    ? 'speech'
-                    : ['anthropic', 'gemini'].includes(preset.protocol)
-                      ? 'chat'
-                      : p.kind,
-                  models: [],
-                });
-                setModelsText(fish ? fishModels.slice(0, 2).join('\n') : '');
-                setFetched([]);
-              }}
-            >
-              {preset.name}
-            </button>
-          ))}
-        </div>
-        <div className="form-grid">
-          <Field label="连接名称">
-            <input value={p.name} onChange={(e) => patch({ name: e.target.value })} />
-          </Field>
-          <Field label="用途">
-            <Select
-              value={p.kind}
-              onChange={(value) =>
-                patch({
-                  kind: value as Provider['kind'],
-                  ...((p.protocol === 'fish' && value !== 'speech') ||
-                  (['music', 'speech'].includes(value) && p.protocol !== 'fish')
-                    ? { protocol: 'openai' as const }
-                    : {}),
-                })
-              }
-              options={[
-                { value: 'chat', label: '对话 / Agent' },
-                { value: 'image', label: '图像生成' },
-                { value: 'music', label: '音乐生成' },
-                { value: 'speech', label: '语音合成' },
-              ]}
-            />
-          </Field>
-        </div>
-        <Field label="接口协议">
-          <Select
-            value={p.protocol}
-            onChange={(value) => patch({ protocol: value as Provider['protocol'] })}
-            options={[
-              { value: 'openai', label: 'OpenAI 兼容', description: 'Chat / Images / Audio' },
-              ...(p.kind === 'speech'
-                ? [{ value: 'fish', label: 'Fish Audio', description: '原生语音' }]
-                : []),
-              ...(p.kind === 'chat'
-                ? [
-                    { value: 'responses', label: 'OpenAI Responses' },
-                    { value: 'anthropic', label: 'Anthropic Messages' },
-                  ]
-                : []),
-              ...(['chat', 'image'].includes(p.kind)
-                ? [{ value: 'gemini', label: 'Google Gemini', description: '原生接口' }]
-                : []),
-            ]}
-          />
-        </Field>
-        <Field label="服务地址 Base URL" hint="填写供应商的接口地址，包含版本路径（如 /v1）。">
-          <input
-            type="url"
-            value={p.baseUrl}
-            onChange={(e) => patch({ baseUrl: e.target.value })}
-          />
-        </Field>
-        <Field
-          label="API Key"
-          hint={p.hasKey ? '密钥已保存；不编辑则继续使用。' : '支持无密钥的本地服务。'}
-        >
-          <input
-            type="password"
-            autoComplete="off"
-            value={p.apiKey || ''}
-            placeholder={p.hasKey ? '•••••••• 已保存' : 'sk-…'}
-            onChange={(e) => patch({ apiKey: e.target.value })}
-          />
-        </Field>
-        {p.hasKey && (
-          <button className="text-link" onClick={() => patch({ apiKey: '', hasKey: false })}>
-            清除已保存的密钥
-          </button>
-        )}
-        <div className="field-header">
-          <strong>可用模型</strong>
-          <Button
-            busy={loading}
-            onClick={async () => {
-              setLoading(true);
-              setLoadError('');
-              try {
-                const data = await post('/providers/models', {
-                  provider: { ...p, models: selected },
-                });
-                setFetched(data.models);
-                notify(
-                  p.protocol === 'fish'
-                    ? '已列出 Fish 型号，实际权限以你的账号为准'
-                    : `已获取 ${data.models.length} 个模型，勾选需要使用的模型`,
-                );
-              } catch (e) {
-                setLoadError((e as Error).message);
-              } finally {
-                setLoading(false);
-              }
-            }}
-          >
-            <RefreshCw size={13} />
-            {p.protocol === 'fish' ? '查看内置型号' : '拉取模型'}
-          </Button>
-        </div>
-        {loading && !fetched.length && <ModelSkeleton />}
-        {loadError && (
-          <p className="error-box" role="alert">
-            {loadError}，可重新拉取；已选模型会保留。
-          </p>
-        )}
-        {fetched.length > 0 && (
-          <div className="model-picker">
-            <div>
-              <input
-                placeholder="筛选可用模型…"
-                aria-label="筛选可用模型"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              />
-              <button onClick={() => setModelsText(fetched.join('\n'))}>全选</button>
-              <button onClick={() => setModelsText('')}>清空</button>
-            </div>
-            <div>
-              {fetched
-                .filter((m) => m.toLowerCase().includes(filter.toLowerCase()))
-                .map((m) => (
-                  <label key={m}>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(m)}
-                      onChange={(e) =>
-                        setModelsText(
-                          (e.target.checked
-                            ? [...selected, m]
-                            : selected.filter((x) => x !== m)
-                          ).join('\n'),
-                        )
-                      }
-                    />
-                    {m}
-                  </label>
-                ))}
-            </div>
-          </div>
-        )}
-        <Field
-          label="手动模型列表"
-          hint="每行一个模型 ID，也可以用逗号分隔。兼容不支持模型列表的服务。"
-        >
-          <textarea
-            rows={4}
-            value={modelsText}
-            onChange={(e) => setModelsText(e.target.value)}
-            placeholder={
-              p.kind === 'image'
-                ? 'gpt-image-1'
-                : p.kind === 'music'
-                  ? 'your-music-model'
-                  : '填写服务提供的模型 ID'
-            }
-          />
-        </Field>
-        {p.kind === 'chat' && selected.length > 0 && (
-          <details className="context-window-fields">
-            <summary>上下文容量（可选）</summary>
-            {selected.map((m) => (
-              <Field label={m} key={m}>
-                <input
-                  type="number"
-                  min="256"
-                  max="10000000"
-                  placeholder="以服务商公布的 token 上限为准"
-                  value={p.contextWindows?.[m] || ''}
-                  onChange={(e) => {
-                    const windows = { ...p.contextWindows };
-                    if (e.target.value) windows[m] = Number(e.target.value);
-                    else delete windows[m];
-                    patch({ contextWindows: windows });
-                  }}
-                />
-              </Field>
-            ))}
-          </details>
-        )}
-        {p.protocol === 'fish' && (
-          <p className="info-box">
-            推荐 s2.1-pro。s2.1-pro-free 可用于账号允许的测试额度。音色在「声音」或人偶卡中填写
-            reference_id；密钥保存在当前浏览器。
-          </p>
-        )}
-        {p.kind === 'music' && (
-          <p className="info-box">
-            音乐适配使用 POST /audio/generations，接受 model、prompt、lyrics、duration，并同步返回
-            data[0].audio_url、url 或 b64_json。异步音乐服务可通过自定义 HTTP 工具接入。
-          </p>
-        )}
-      </div>
-      <p className="connection-selection-count" role="status">
-        已选 {new Set(selected).size} 个模型
-      </p>
-    </section>
   );
 }

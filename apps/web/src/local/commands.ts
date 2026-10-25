@@ -1,3 +1,4 @@
+import { ModelCatalogService } from '@livra/runtime/model-catalog';
 import Ajv from 'ajv';
 import { z } from 'zod';
 import {
@@ -38,6 +39,7 @@ export function createLocalCommands(store: BrowserStore) {
   const app = new LocalRouter();
   const liveModels = new LiveModelService(store);
   const vits = new VitsService();
+  const modelCatalog = new ModelCatalogService(store);
   const context = (_workspace: string, signal = AbortSignal.timeout(180_000)): Context => {
     const settings = store.settings(workspace);
     return {
@@ -80,9 +82,12 @@ export function createLocalCommands(store: BrowserStore) {
     } catch {
       throw Object.assign(Error('自定义工具的 JSON Schema 无效'), { statusCode: 400 });
     }
-    for (const p of settings.providers)
-      if (p.apiKey === undefined)
-        p.apiKey = previous.providers.find((old) => old.id === p.id)?.apiKey;
+    for (const p of settings.providers) {
+      const old = previous.providers.find((item) => item.id === p.id);
+      if (p.keys === undefined && p.apiKey === undefined) p.keys = old?.keys;
+      if (p.apiKey === undefined) p.apiKey = old?.apiKey;
+      if (p.keys !== undefined) p.apiKey = p.keys[0] || '';
+    }
     for (const t of settings.customTools)
       if (t.apiKey === undefined)
         t.apiKey = previous.customTools.find((old) => old.name === t.name)?.apiKey;
@@ -91,17 +96,26 @@ export function createLocalCommands(store: BrowserStore) {
     store.saveSettings(req.workspace, settings);
     return publicSettings(settings);
   });
+  app.get('/api/providers/:id/keys', async (req) => {
+    const p = store
+      .settings(req.workspace)
+      .providers.find((p) => p.id === (req.params as { id: string }).id);
+    if (!p) throw Error('供应商已不存在');
+    return { keys: p.keys ?? (p.apiKey ? [p.apiKey] : []) };
+  });
+  app.get('/api/model-catalog', async (req) => modelCatalog.load(req.workspace));
   app.post('/api/providers/models', async (req) => {
     const input = z.object({ provider: providerSchema }).parse(req.body);
     const provider = input.provider;
-    if (provider.apiKey === undefined)
-      provider.apiKey = store
-        .settings(req.workspace)
-        .providers.find((p) => p.id === provider.id)?.apiKey;
+    const saved = store.settings(req.workspace).providers.find((p) => p.id === provider.id);
+    if (provider.keys === undefined && provider.apiKey === undefined) provider.keys = saved?.keys;
+    if (provider.apiKey === undefined) provider.apiKey = saved?.apiKey;
     try {
       return { models: await listModels(provider, req.signal) };
     } catch (error) {
-      throw Object.assign(Error(safeError(error, [provider.apiKey])), { statusCode: 502 });
+      throw Object.assign(Error(safeError(error, [provider.apiKey, ...(provider.keys || [])])), {
+        statusCode: 502,
+      });
     }
   });
   app.get('/api/live-models', async (req) => liveModelCatalog(store.settings(req.workspace)));
@@ -318,7 +332,10 @@ export function createLocalCommands(store: BrowserStore) {
       .parse(req.body);
     const settings = data.settings;
     delete settings.sakta;
-    for (const p of settings.providers) delete p.apiKey;
+    for (const p of settings.providers) {
+      delete p.apiKey;
+      delete p.keys;
+    }
     for (const t of settings.customTools) delete t.apiKey;
     delete settings.searchKey;
     // Validate the entire backup before the transaction, and rebuild protocol history.
