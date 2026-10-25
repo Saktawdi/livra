@@ -4,6 +4,8 @@ import { z } from 'zod';
 import {
   settingsSchema,
   publicSettings,
+  resolveSearchCredentials,
+  searchTestSchema,
   providerSchema,
   personaSchema,
   speechLanguageSchema,
@@ -31,6 +33,7 @@ import { LiveModelService } from '@livra/runtime/live-models';
 import { VitsService } from '@livra/runtime/vits';
 import { synthesize } from '@livra/runtime/speech';
 import { prepareNarration } from '@livra/runtime/narration';
+import { searchWeb } from '@livra/runtime/search';
 import { LocalRouter } from './router';
 import type { BrowserStore } from './store';
 const randomUUID = () => crypto.randomUUID();
@@ -91,7 +94,7 @@ export function createLocalCommands(store: BrowserStore) {
     for (const t of settings.customTools)
       if (t.apiKey === undefined)
         t.apiKey = previous.customTools.find((old) => old.name === t.name)?.apiKey;
-    if (settings.searchKey === undefined) settings.searchKey = previous.searchKey;
+    Object.assign(settings, resolveSearchCredentials(settings, previous));
     settings.sakta = previous.sakta;
     store.saveSettings(req.workspace, settings);
     return publicSettings(settings);
@@ -102,6 +105,16 @@ export function createLocalCommands(store: BrowserStore) {
       .providers.find((p) => p.id === (req.params as { id: string }).id);
     if (!p) throw Error('供应商已不存在');
     return { keys: p.keys ?? (p.apiKey ? [p.apiKey] : []) };
+  });
+  app.get('/api/search/keys', async (req) => {
+    const settings = store.settings(req.workspace);
+    return { keys: settings.searchKeys ?? (settings.searchKey ? [settings.searchKey] : []) };
+  });
+  app.post('/api/search/test', async (req) => {
+    const { query, config } = searchTestSchema.parse(req.body);
+    const saved = store.settings(req.workspace);
+    const settings = { ...saved, ...config, ...resolveSearchCredentials(config, saved) };
+    return searchWeb(settings, query, req.signal);
   });
   app.get('/api/model-catalog', async (req) => modelCatalog.load(req.workspace));
   app.post('/api/providers/models', async (req) => {
@@ -338,6 +351,7 @@ export function createLocalCommands(store: BrowserStore) {
     }
     for (const t of settings.customTools) delete t.apiKey;
     delete settings.searchKey;
+    delete settings.searchKeys;
     // Validate the entire backup before the transaction, and rebuild protocol history.
     const conversations = data.conversations.map((raw) => {
       const c = z

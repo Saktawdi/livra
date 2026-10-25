@@ -12,6 +12,8 @@ import { z } from 'zod';
 import {
   settingsSchema,
   publicSettings,
+  resolveSearchCredentials,
+  searchTestSchema,
   providerSchema,
   personaSchema,
   speechLanguageSchema,
@@ -34,6 +36,7 @@ import { VitsService } from './vits.ts';
 import { prepareNarration } from './narration.ts';
 import { listSaktaModels, saktaRequest } from './sakta.ts';
 import { LiveModelService } from './live-models.ts';
+import { searchWeb } from './search.ts';
 import type { network } from './network.ts';
 
 declare module 'fastify' {
@@ -124,6 +127,7 @@ export async function createApp(
       ...(settings?.customTools.map((t) => t.apiKey) || []),
       settings?.sakta?.token,
       settings?.searchKey,
+      ...(settings?.searchKeys || []),
     ];
     const status = error instanceof z.ZodError ? 400 : (error as any).statusCode || 500;
     const message =
@@ -206,12 +210,18 @@ export async function createApp(
     for (const t of settings.customTools)
       if (t.apiKey === undefined)
         t.apiKey = previous.customTools.find((old) => old.name === t.name)?.apiKey;
-    if (settings.searchKey === undefined) settings.searchKey = previous.searchKey;
+    Object.assign(settings, resolveSearchCredentials(settings, previous));
     settings.sakta = previous.sakta;
     store.saveSettings(req.workspace, settings);
     return publicSettings(settings);
   });
   app.get('/api/model-catalog', async (req) => modelCatalog.load(req.workspace));
+  app.post('/api/search/test', async (req) => {
+    const { query, config } = searchTestSchema.parse(req.body);
+    const saved = store.settings(req.workspace);
+    const settings = { ...saved, ...config, ...resolveSearchCredentials(config, saved) };
+    return searchWeb(settings, query, AbortSignal.timeout(180_000));
+  });
   app.post('/api/providers/models', async (req) => {
     const input = z.object({ provider: providerSchema }).parse(req.body);
     const provider = input.provider;
@@ -467,6 +477,7 @@ export async function createApp(
     }
     for (const t of settings.customTools) delete t.apiKey;
     delete settings.searchKey;
+    delete settings.searchKeys;
     // Validate the entire backup before the transaction, and rebuild protocol history.
     const conversations = data.conversations.map((raw) => {
       const c = z

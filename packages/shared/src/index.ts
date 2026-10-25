@@ -330,6 +330,8 @@ export const settingsSchema = z.object({
   speechLatency: z.enum(['normal', 'balanced']).default('balanced'),
   searchUrl: z.union([z.string().url(), z.literal('')]).default(''),
   searchKey: z.string().max(8000).optional(),
+  searchKeys: z.array(z.string().trim().min(1).max(8000)).max(500).optional(),
+  searchKeyCount: z.number().int().nonnegative().optional(),
   hasSearchKey: z.boolean().optional(),
   searchEngine: z.enum(['searxng', 'tavily', 'anysearch']).default('anysearch'),
   appearance: appearanceSchema.prefault({}),
@@ -360,6 +362,27 @@ export const settingsSchema = z.object({
     .optional(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
+export const searchTestSchema = z.object({
+  query: z.string().trim().min(1).max(500),
+  config: settingsSchema.pick({
+    searchEngine: true,
+    searchUrl: true,
+    searchKey: true,
+    searchKeys: true,
+  }),
+});
+export function resolveSearchCredentials(
+  current: Pick<Settings, 'searchKey' | 'searchKeys'>,
+  previous: Pick<Settings, 'searchKey' | 'searchKeys'>,
+): Pick<Settings, 'searchKey' | 'searchKeys'> {
+  const searchKeys =
+    current.searchKeys ?? (current.searchKey === undefined ? previous.searchKeys : undefined);
+  return {
+    searchKeys,
+    searchKey:
+      searchKeys === undefined ? (current.searchKey ?? previous.searchKey) : searchKeys[0] || '',
+  };
+}
 export function speechEngine(settings: Pick<Settings, 'speechEngine' | 'speechProvider'>) {
   return settings.speechEngine || (settings.speechProvider ? 'custom' : 'vits');
 }
@@ -548,7 +571,9 @@ export function publicSettings(settings: Settings): Settings {
     })),
     customTools: settings.customTools.map(({ apiKey, ...t }) => ({ ...t, hasKey: !!apiKey })),
     searchKey: undefined,
-    hasSearchKey: !!settings.searchKey,
+    searchKeys: undefined,
+    searchKeyCount: settings.searchKeys?.length ?? Number(!!settings.searchKey),
+    hasSearchKey: (settings.searchKeys?.length ?? Number(!!settings.searchKey)) > 0,
     sakta: settings.sakta
       ? { name: settings.sakta.name, connected: !!settings.sakta.token }
       : undefined,

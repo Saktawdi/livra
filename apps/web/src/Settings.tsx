@@ -21,6 +21,7 @@ import { ModelDefault } from './ModelDefault';
 import { VoiceSettings } from './VoiceSettings';
 import type { Notify } from './App';
 import { ProviderSettings } from './ProviderSettings';
+import { SearchSettings } from './SearchSettings';
 import { Appearance } from './Appearance';
 
 export function SettingsPanel({
@@ -271,73 +272,7 @@ export function SettingsPanel({
             </>
           )}
           {tab === 'voice' && <VoiceSettings draft={draft} patch={patch} notify={notify} />}
-          {tab === 'search' && (
-            <Section title="网页搜索" description="配置服务后，在人偶卡中启用网页搜索。">
-              <Field label="搜索服务">
-                <Select
-                  value={draft.searchEngine}
-                  onChange={(value) =>
-                    patch({
-                      searchEngine: value as Settings['searchEngine'],
-                      searchUrl:
-                        value === 'anysearch'
-                          ? 'https://api.anysearch.com/v1/search'
-                          : value === 'tavily'
-                            ? 'https://api.tavily.com/search'
-                            : '',
-                      searchKey: '',
-                      hasSearchKey: false,
-                    })
-                  }
-                  options={[
-                    {
-                      value: 'anysearch',
-                      label: 'AnySearch',
-                      description: '官方 REST · 支持匿名搜索',
-                    },
-                    { value: 'searxng', label: 'SearXNG', description: '自部署搜索服务' },
-                    { value: 'tavily', label: 'Tavily' },
-                  ]}
-                />
-              </Field>
-              <Field
-                label="服务地址"
-                hint={
-                  draft.searchEngine === 'anysearch'
-                    ? '默认使用官方 /v1/search，密钥可选。'
-                    : draft.searchEngine === 'searxng'
-                      ? '例如 https://search.example.com，服务需开启 JSON 输出。'
-                      : '填写完整搜索地址，例如 https://api.tavily.com/search。'
-                }
-              >
-                <input
-                  type="url"
-                  value={draft.searchUrl}
-                  onChange={(e) => patch({ searchUrl: e.target.value })}
-                  placeholder={
-                    draft.searchEngine === 'anysearch'
-                      ? 'https://api.anysearch.com/v1/search'
-                      : draft.searchEngine === 'searxng'
-                        ? 'https://search.example.com'
-                        : 'https://api.tavily.com/search'
-                  }
-                />
-              </Field>
-              {draft.searchEngine !== 'searxng' && (
-                <Field
-                  label={draft.searchEngine === 'anysearch' ? '搜索密钥（可选）' : '搜索密钥'}
-                  hint={draft.hasSearchKey ? '已保存密钥；不编辑则继续使用。' : undefined}
-                >
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={draft.searchKey || ''}
-                    onChange={(e) => patch({ searchKey: e.target.value })}
-                  />
-                </Field>
-              )}
-            </Section>
-          )}
+          {tab === 'search' && <SearchSettings settings={draft} patch={patch} notify={notify} />}
           {tab === 'data' && (
             <>
               <Section

@@ -73,6 +73,7 @@ export async function localCommand<T>(path: string, options: RequestInit = {}): 
       ...settings.providers.flatMap((p) => [p.apiKey, ...(p.keys || [])]),
       ...settings.customTools.map((t) => t.apiKey),
       settings.searchKey,
+      ...(settings.searchKeys || []),
       settings.sakta?.token,
     ]);
     throw Object.assign(Error(message), { statusCode: (error as any)?.statusCode });

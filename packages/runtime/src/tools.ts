@@ -691,6 +691,7 @@ export async function executeTool(name: string, args: unknown, ctx: Context, man
         ...ctx.settings.providers.flatMap((p) => [p.apiKey, ...(p.keys || [])]),
         ...ctx.settings.customTools.map((t) => t.apiKey),
         ctx.settings.searchKey,
+        ...(ctx.settings.searchKeys || []),
         ctx.settings.sakta?.token,
       ]),
     );
