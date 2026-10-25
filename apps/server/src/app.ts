@@ -1,4 +1,5 @@
 import { ModelCatalogService } from '@livra/runtime/model-catalog';
+import { conversationBeforeMessage } from '@livra/shared';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
@@ -592,6 +593,7 @@ export async function createApp(
         model: z.string().min(1).max(200),
         content: z.string().max(100000),
         reasoning: z.string().min(1).max(80).optional(),
+        editMessageId: z.string().uuid().optional(),
         attachments: z
           .array(
             z.object({
@@ -637,6 +639,9 @@ export async function createApp(
     ctx.persona =
       ctx.settings.personas.find((p) => p.id === conversation.personaId) ||
       ctx.settings.personas[0];
+    const base = input.editMessageId
+      ? conversationBeforeMessage(conversation, input.editMessageId)
+      : conversation;
     const run: Run = {
       id: randomUUID(),
       workspace: req.workspace,
@@ -673,7 +678,7 @@ export async function createApp(
       await runAgent(
         ctx,
         run,
-        conversation,
+        base,
         provider,
         input.model,
         {
@@ -684,6 +689,7 @@ export async function createApp(
           created: Date.now(),
         },
         input.reasoning,
+        !!input.editMessageId,
       );
     } finally {
       clearInterval(keepalive);

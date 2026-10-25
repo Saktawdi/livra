@@ -26,9 +26,12 @@
 .chat-main .message.user .message-meta time {
   font-size: 10px;
 }
-.chat-main .message.user .markdown {
+.chat-main .message.user .user-text {
   font-size: 14px;
   line-height: 1.85;
+  white-space: pre-wrap;
+  display: inline-block;
+  max-width: 100%;
 }
 .chat-main .message.assistant .message-meta {
   margin-top: 6px;
@@ -49,7 +52,7 @@
   padding: 0;
   background: transparent;
   border: 0;
-  border-radius: 11px;
+  border-radius: 50%;
 }
 .chat-avatar {
   position: relative;
@@ -59,7 +62,7 @@
   height: 34px;
   flex-shrink: 0;
   overflow: hidden;
-  border-radius: 11px;
+  border-radius: 50%;
   background: var(--surface-2);
   color: var(--muted);
   font-size: 13px;
@@ -98,7 +101,7 @@
 .avatar-picker .chat-avatar {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: 50%;
 }
 .avatar-picker > div {
   min-width: 0;
@@ -123,7 +126,52 @@
 .appearance-live-preview .chat-avatar {
   width: 25px;
   height: 25px;
-  border-radius: 8px;
+  border-radius: 50%;
+}
+/* Message actions and edit banner ported from Lumen's chat UI. */
+.chat-main .message-actions {
+  gap: 2px;
+  min-height: 25px;
+  margin-top: 10px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.chat-main .message:hover .message-actions,
+.chat-main .message:focus-within .message-actions {
+  opacity: 1;
+}
+.chat-main .message:last-of-type .message-actions {
+  opacity: 0.7;
+}
+.chat-main .message-actions .icon-button {
+  width: 26px;
+  height: 25px;
+}
+.chat-main .message.user .message-actions {
+  justify-content: flex-end;
+}
+.chat-main .message-actions > span {
+  font-size: 11px;
+  margin-left: 7px;
+}
+.edit-banner {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent);
+  padding: 0 5px 10px;
+}
+.edit-banner button {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+@media (hover: none) {
+  .chat-main .message .message-actions {
+    opacity: 1;
+  }
 }
 .chat-main .composer-wrap {
   padding-top: 12px;
@@ -225,7 +273,7 @@
   .chat-main .chat-avatar {
     width: 29px;
     height: 29px;
-    border-radius: 9px;
+    border-radius: 50%;
   }
   .chat-main .message.user .message-body {
     max-width: calc(100% - 38px);

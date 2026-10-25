@@ -308,6 +308,7 @@ export function App() {
     providerId: string,
     model: string,
     reasoning: string,
+    editMessageId?: string,
   ) {
     if (busy || !settings) return false;
     if (!providerId || !model) {
@@ -334,7 +335,7 @@ export function App() {
     } finally {
       creating.current = false;
     }
-    return taskRuns.start(c, { content, attachments, providerId, model, reasoning });
+    return taskRuns.start(c, { content, attachments, providerId, model, reasoning, editMessageId });
   }
   const stop = () => taskRuns.stop(selected.current);
   const approve = taskRuns.approve;

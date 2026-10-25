@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AgentEvent, Attachment, Conversation, LiveState, Mood } from '@livra/shared';
+import { conversationBeforeMessage } from '@livra/shared';
 import { api, post, streamRun } from './api';
 import type { Approval, Notify } from './App';
 
@@ -15,6 +16,7 @@ type Input = {
   providerId: string;
   model: string;
   reasoning: string;
+  editMessageId?: string;
 };
 
 export function useConversationRuns(callbacks: {
@@ -41,6 +43,13 @@ export function useConversationRuns(callbacks: {
   async function start(conversation: Conversation, input: Input) {
     const id = conversation.id;
     if (controllers.current.has(id)) return false;
+    try {
+      if (input.editMessageId)
+        conversation = conversationBeforeMessage(conversation, input.editMessageId);
+    } catch (error) {
+      latest.current.notify((error as Error).message, 'error');
+      return false;
+    }
     const run = { id: '', controller: new AbortController() };
     controllers.current.set(id, run);
     current.current = {
@@ -48,9 +57,10 @@ export function useConversationRuns(callbacks: {
       [id]: {
         conversation: {
           ...conversation,
-          title: conversation.messages.length
-            ? conversation.title
-            : input.content.slice(0, 48) || input.attachments[0]?.name || '新对话',
+          title:
+            conversation.messages.length || input.editMessageId
+              ? conversation.title
+              : input.content.slice(0, 48) || input.attachments[0]?.name || '新对话',
           messages: [
             ...conversation.messages,
             {

@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { settingsSchema, type AgentEvent, type Conversation } from '@livra/shared';
+import {
+  settingsSchema,
+  conversationBeforeMessage,
+  type AgentEvent,
+  type Conversation,
+} from '@livra/shared';
 import { runAgent, runs, resolveProvider, type Run } from '@livra/runtime/agent';
 import { safeError } from '@livra/runtime/network';
 import { BrowserStore } from './store';
@@ -80,6 +85,7 @@ const runInput = z.object({
   model: z.string().min(1).max(200),
   content: z.string().max(100000),
   reasoning: z.string().min(1).max(80).optional(),
+  editMessageId: z.string().uuid().optional(),
   attachments: z
     .array(
       z.object({
@@ -115,6 +121,9 @@ export async function localRun(
   if (!conversation) throw Error('对话不存在');
   if ([...runs.values()].some((run) => run.conversationId === conversation.id))
     throw Error('这段对话已有任务正在执行');
+  const base = input.editMessageId
+    ? conversationBeforeMessage(conversation, input.editMessageId)
+    : conversation;
   ctx.persona =
     ctx.settings.personas.find((p) => p.id === conversation.personaId) || ctx.settings.personas[0];
   const run: Run = {
@@ -131,7 +140,7 @@ export async function localRun(
     await runAgent(
       ctx,
       run,
-      conversation,
+      base,
       provider,
       input.model,
       {
@@ -142,6 +151,7 @@ export async function localRun(
         created: Date.now(),
       },
       input.reasoning,
+      !!input.editMessageId,
     );
   } finally {
     await store.flush();

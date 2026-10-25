@@ -3,12 +3,13 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   isValidElement,
   type ReactNode,
   type ReactElement,
   type ButtonHTMLAttributes,
 } from 'react';
-import { X, LoaderCircle } from 'lucide-react';
+import { X, LoaderCircle, Copy, Check, CircleAlert } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Select } from './Select';
@@ -255,22 +256,43 @@ export function Section({
 export function Badge({ children, color = '' }: { children: ReactNode; color?: string }) {
   return <span className={'badge ' + color}>{children}</span>;
 }
-export function CopyButton({ text }: { text: string }) {
-  const ref = useRef<HTMLButtonElement>(null);
+export function CopyButton({
+  text,
+  onError,
+}: {
+  text: string;
+  onError: (message: string) => void;
+}) {
+  const [status, setStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    setStatus('idle');
+    return () => clearTimeout(timer.current);
+  }, [text]);
   return (
-    <button
-      ref={ref}
-      className="copy-link"
+    <IconButton
+      label={
+        status === 'copied' ? '已复制消息' : status === 'error' ? '复制失败，点击重试' : '复制消息'
+      }
       onClick={async () => {
-        await navigator.clipboard.writeText(text);
-        const el = ref.current!;
-        el.textContent = '已复制';
-        setTimeout(() => {
-          if (ref.current) ref.current.textContent = '复制';
-        }, 1600);
+        clearTimeout(timer.current);
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus('copied');
+        } catch {
+          setStatus('error');
+          onError('无法访问剪贴板，请选择文本复制');
+        }
+        timer.current = setTimeout(() => setStatus('idle'), 1600);
       }}
     >
-      复制
-    </button>
+      {status === 'copied' ? (
+        <Check size={13} />
+      ) : status === 'error' ? (
+        <CircleAlert size={13} />
+      ) : (
+        <Copy size={13} />
+      )}
+    </IconButton>
   );
 }

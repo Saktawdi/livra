@@ -1,6 +1,7 @@
 import { appearanceSchema } from './skins.ts';
 export * from './skins.ts';
 export * from './conversation-organization.ts';
+export { conversationBeforeMessage, messageToWire } from './conversation-history.ts';
 export { matchModel, flattenCatalog } from './model-catalog.ts';
 import { z } from 'zod';
 export { applyMarpTheme, marpThemeName } from './marp';

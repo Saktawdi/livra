@@ -24,6 +24,8 @@ import {
   Globe,
   Music2,
   PanelRight,
+  Pencil,
+  RotateCcw,
 } from 'lucide-react';
 import type {
   Attachment,
@@ -115,6 +117,7 @@ type Props = {
     provider: string,
     model: string,
     reasoning: string,
+    editMessageId?: string,
   ) => Promise<boolean>;
   onStop: () => void;
   onPersona: (id: string) => void;
@@ -157,6 +160,10 @@ export function Chat({
 }: Props) {
   const [draft, setDraft] = useDraft(conversation?.id);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [edit, setEdit] = useState<{ conversationId: string; messageId: string }>();
+  const activeConversation = useRef(conversation?.id);
+  activeConversation.current = conversation?.id;
+  const editing = edit?.conversationId === conversation?.id ? edit : undefined;
   const [providerId, setProviderId] = useState(settings.defaultProvider),
     [model, setModel] = useState(settings.defaultModel),
     [reasoning, setReasoning] = useState('auto'),
@@ -227,6 +234,7 @@ export function Chat({
   }, [JSON.stringify(options), remoteModels.loading, remoteModels.error, providerId, model]);
   useEffect(() => {
     if (initialPrompt) {
+      setEdit(undefined);
       setDraft(initialPrompt);
       onPromptUsed();
       textRef.current?.focus();
@@ -246,6 +254,7 @@ export function Chat({
     nearBottom.current = true;
     setScrolled(false);
     setAttachments([]);
+    setEdit(undefined);
     stopVoice();
   }, [conversation?.id]);
   useEffect(() => () => recognitionRef.current?.abort(), []);
@@ -285,14 +294,59 @@ export function Chat({
     submission.current = true;
     const text = draft,
       files = attachments;
+    const submittedConversation = conversation?.id;
     setDraft('');
     setAttachments([]);
+    setEdit(undefined);
     nearBottom.current = true;
     try {
-      if (!(await onSend(text, files, providerId, model, reasoning))) {
+      if (
+        !(await onSend(text, files, providerId, model, reasoning, editing?.messageId)) &&
+        activeConversation.current === submittedConversation
+      ) {
         setDraft((d) => d || text);
         setAttachments((a) => (a.length ? a : files));
+        setEdit(editing);
       }
+    } finally {
+      submission.current = false;
+    }
+  }
+  function editMessage(messageId: string) {
+    if (busy || submission.current || !conversation) return;
+    const message = conversation.messages.find(
+      (message) => message.id === messageId && message.role === 'user',
+    );
+    if (!message) return;
+    setDraft(message.content);
+    setAttachments([...(message.attachments || [])]);
+    setEdit({ conversationId: conversation.id, messageId });
+    textRef.current?.focus();
+  }
+  async function regenerate(messageId: string) {
+    if (busy || submission.current || !conversation) return;
+    const index = conversation.messages.findIndex((message) => message.id === messageId);
+    const previous = conversation.messages
+      .slice(0, index)
+      .findLast((message) => message.role === 'user');
+    if (!previous) return;
+    if (!providerId || !model) {
+      onSettings();
+      return;
+    }
+    submission.current = true;
+    nearBottom.current = true;
+    setEdit(undefined);
+    stopVoice();
+    try {
+      await onSend(
+        previous.content,
+        previous.attachments || [],
+        providerId,
+        model,
+        reasoning,
+        previous.id,
+      );
     } finally {
       submission.current = false;
     }
@@ -501,7 +555,11 @@ export function Chat({
                       </div>
                     )}
                     {m.content ? (
-                      <Markdown text={m.content} />
+                      m.role === 'user' ? (
+                        <div className="user-text">{m.content}</div>
+                      ) : (
+                        <Markdown text={m.content} />
+                      )
                     ) : busy && i === conversation!.messages.length - 1 && !m.tools?.length ? (
                       <div className="thinking-dots" role="status" aria-label="正在思考">
                         <i />
@@ -527,9 +585,7 @@ export function Chat({
                               .slice(0, i)
                               .findLast((x) => x.role === 'user');
                             if (previous) {
-                              setDraft(previous.content);
-                              setAttachments(previous.attachments || []);
-                              textRef.current?.focus();
+                              editMessage(previous.id);
                             }
                           }}
                         >
@@ -537,34 +593,60 @@ export function Chat({
                           <ArrowUpRight size={15} />
                         </button>
                       )}
-                    {m.role === 'assistant' &&
-                      m.content &&
-                      !(busy && i === conversation!.messages.length - 1) && (
-                        <div className="message-actions">
-                          <CopyButton text={m.content} />
+                    {!(
+                      busy &&
+                      m.role === 'assistant' &&
+                      i === conversation!.messages.length - 1
+                    ) && (
+                      <div className="message-actions">
+                        <CopyButton
+                          text={m.content}
+                          onError={(message) => notify(message, 'error')}
+                        />
+                        {m.role === 'user' ? (
                           <IconButton
-                            label={
-                              preparing
-                                ? `${voiceStage} · 点击取消`
-                                : speaking
-                                  ? '停止朗读'
-                                  : settings.speechMode === 'summary'
-                                    ? '总结朗读回复'
-                                    : '纯朗读回复'
-                            }
-                            onClick={() => speak(m.content)}
+                            label="编辑并重发"
+                            disabled={busy}
+                            onClick={() => editMessage(m.id)}
                           >
-                            {preparing ? (
-                              <LoaderCircle size={16} className="spin" />
-                            ) : speaking ? (
-                              <VolumeX size={16} />
-                            ) : (
-                              <Volume2 size={16} />
-                            )}
+                            <Pencil size={13} />
                           </IconButton>
-                          {m.usage && <span>{m.usage.total.toLocaleString()} tokens</span>}
-                        </div>
-                      )}
+                        ) : (
+                          <>
+                            <IconButton
+                              label="重新生成"
+                              disabled={busy}
+                              onClick={() => void regenerate(m.id)}
+                            >
+                              <RotateCcw size={13} />
+                            </IconButton>
+                            {m.content && (
+                              <IconButton
+                                label={
+                                  preparing
+                                    ? `${voiceStage} · 点击取消`
+                                    : speaking
+                                      ? '停止朗读'
+                                      : settings.speechMode === 'summary'
+                                        ? '总结朗读回复'
+                                        : '纯朗读回复'
+                                }
+                                onClick={() => speak(m.content)}
+                              >
+                                {preparing ? (
+                                  <LoaderCircle size={16} className="spin" />
+                                ) : speaking ? (
+                                  <VolumeX size={16} />
+                                ) : (
+                                  <Volume2 size={16} />
+                                )}
+                              </IconButton>
+                            )}
+                            {m.usage && <span>{m.usage.total.toLocaleString()} tokens</span>}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </article>
               ))}
@@ -626,6 +708,22 @@ export function Chat({
           </button>
         )}
         <div className="composer-wrap">
+          {editing && (
+            <div className="edit-banner" role="status">
+              <Pencil size={13} />
+              正在编辑消息，发送后从这里继续。
+              <button
+                onClick={() => {
+                  setEdit(undefined);
+                  setDraft('');
+                  setAttachments([]);
+                  textRef.current?.focus();
+                }}
+              >
+                取消
+              </button>
+            </div>
+          )}
           <div
             className={'composer ' + (busy ? 'is-busy' : '') + (dragging ? ' drag-over' : '')}
             onDragEnter={(e) => {
