@@ -1,0 +1,12 @@
+services:
+  livra:
+    build: .
+    ports:
+      - "127.0.0.1:3400:3400"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3400
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+    restart: unless-stopped

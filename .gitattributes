@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.moc3 binary
+*.zip binary
+apps/web/public/vendor/** -whitespace
+apps/web/public/models/** -whitespace

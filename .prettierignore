@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.local/
+.data/
+apps/web/public/vendor/
+apps/web/public/models/
+package-lock.json

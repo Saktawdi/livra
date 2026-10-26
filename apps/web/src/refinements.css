@@ -1,0 +1,322 @@
+.modal.settings-dialog {
+  height: min(820px, 90dvh);
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-dialog > .modal-header,
+.settings-dialog > .modal-footer {
+  position: static;
+  flex-shrink: 0;
+}
+.settings-dialog .settings-layout {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.settings-dialog .settings-nav {
+  min-height: 0;
+  overflow: auto;
+}
+.settings-dialog .settings-content {
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.connections-workspace {
+  display: grid;
+  grid-template-columns: 166px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  margin-top: 20px;
+}
+.connections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: sticky;
+  top: 0;
+}
+.connections-list > button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 11px 9px;
+  text-align: left;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.connections-list > button:hover {
+  background: var(--surface-2);
+}
+.connections-list > button[aria-current] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.connection-monogram {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 30px;
+  background: var(--surface-2);
+  border-radius: 7px;
+}
+.connections-list > button > span:last-child {
+  min-width: 0;
+}
+.connections-list strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.connections-list small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.connections-list > .connection-add {
+  color: var(--muted);
+  margin-top: 8px;
+}
+.connection-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.connection-heading h4 {
+  margin: 0;
+  font-weight: 500;
+  font-size: 15px;
+}
+.connection-detail {
+  min-width: 0;
+}
+.connection-detail .form-grid {
+  grid-template-columns: 1fr;
+}
+.connection-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 250px;
+  gap: 14px;
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 13px;
+}
+.connection-empty h4 {
+  margin: 0;
+  color: var(--text);
+  font-weight: 500;
+}
+.connection-selection-count {
+  margin: 16px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.running-session-dot {
+  width: 8px;
+  height: 8px;
+  margin: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  flex-shrink: 0;
+}
+.running-session-dot[data-attention='true'] {
+  background: #d49a44;
+}
+.companion-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 18px;
+}
+.companion-reactions button {
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.companion-reactions button:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.companion-reactions small {
+  width: 100%;
+  color: var(--muted);
+  font-size: 11px;
+}
+.presence-actions {
+  flex-wrap: wrap;
+}
+.presence-actions button {
+  flex: 1 0 auto;
+}
+.companion-dock {
+  position: fixed;
+  z-index: 35;
+  width: 224px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 12px 48px #0002;
+}
+.companion-dock.is-collapsed {
+  width: 200px;
+}
+.companion-dock-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+}
+.companion-drag {
+  display: grid;
+  place-items: center;
+  padding: 8px 2px;
+  cursor: grab;
+  touch-action: none;
+  color: var(--muted);
+}
+.companion-drag:active {
+  cursor: grabbing;
+}
+.companion-dock-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 7px 0;
+}
+.companion-dock-name span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  margin-left: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 10px;
+}
+.companion-dock-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.companion-dock-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.companion-dock-status i[data-active='true'] {
+  background: var(--accent);
+}
+.companion-dock-avatar {
+  height: 238px;
+  position: relative;
+}
+.companion-dock-avatar .live-avatar {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.companion-dock-avatar .live-ground {
+  display: none;
+}
+.companion-dock-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 8px 10px;
+}
+.companion-dock-actions > button:first-child {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  font-size: 12px;
+}
+.companion-task-list {
+  max-height: 100px;
+  overflow: auto;
+  padding: 0 10px;
+}
+.companion-task-list button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 0;
+  font-size: 11px;
+}
+.companion-task-list span {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.companion-task-list small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.companion-dock .companion-reactions {
+  padding: 4px 10px 12px;
+}
+@media (max-width: 720px) {
+  .modal.settings-dialog {
+    height: 94dvh;
+    max-height: 94dvh;
+  }
+  .settings-dialog .settings-nav {
+    flex-shrink: 0;
+  }
+  .settings-dialog .settings-content {
+    flex: 1;
+  }
+}
+@media (max-width: 560px) {
+  .connections-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .connections-list {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+  .connections-list > button {
+    flex: 0 0 150px;
+  }
+  .connections-list > .connection-add {
+    margin: 0;
+    flex-basis: 142px;
+  }
+  .connection-empty {
+    min-height: 150px;
+  }
+}

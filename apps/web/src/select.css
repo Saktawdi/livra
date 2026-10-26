@@ -1,0 +1,218 @@
+.select-control {
+  min-width: 0;
+  width: 100%;
+}
+.select-trigger {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.select-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--muted) 35%, var(--line));
+  background: color-mix(in srgb, var(--surface-2) 35%, var(--surface));
+}
+.select-trigger[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+.select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-value small {
+  color: var(--muted);
+  font-size: inherit;
+  margin-right: 7px;
+}
+.select-trigger[data-placeholder],
+.select-chevron {
+  color: var(--muted);
+}
+.select-chevron {
+  transition: transform 160ms ease;
+}
+.select-trigger[aria-expanded='true'] .select-chevron {
+  transform: rotate(180deg);
+}
+.select-panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 12px;
+  box-shadow:
+    0 10px 36px #00000018,
+    0 2px 6px #00000008;
+  overflow: hidden;
+  transform-origin: top center;
+  animation: select-enter 130ms ease-out;
+}
+:root[data-theme='dark'] .select-panel {
+  box-shadow:
+    0 12px 40px #0005,
+    0 2px 6px #0002;
+}
+.select-panel:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+.select-panel[data-side='above'] {
+  transform-origin: bottom center;
+}
+.select-search {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 3px 8px 7px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.select-search input {
+  min-width: 0;
+  min-height: 32px !important;
+  border: 0 !important;
+  border-radius: 4px;
+  padding: 4px 0 !important;
+  background: transparent !important;
+  font-size: 13px !important;
+  outline: none;
+}
+.select-search:focus-within {
+  color: var(--accent-strong);
+}
+.select-options {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.select-option {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.select-option > span {
+  min-width: 0;
+}
+.select-option-label {
+  overflow-wrap: anywhere;
+}
+.select-option small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.select-option[aria-selected='true'] {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+.select-option.highlighted:not(:disabled) {
+  background: var(--surface-2);
+}
+.select-option[aria-selected='true'].highlighted {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.select-check {
+  color: var(--accent-strong);
+}
+.select-group {
+  padding: 12px 10px 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.select-loading {
+  display: grid;
+  gap: 17px;
+  padding: 15px 10px;
+}
+.select-loading span {
+  width: 75%;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  animation: skeleton-pulse 1.5s ease-in-out infinite alternate;
+}
+.select-loading span:nth-child(2) {
+  width: 55%;
+}
+.select-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.select-feedback {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--danger);
+  font-size: 12px;
+}
+.select-feedback > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.select-feedback button {
+  display: flex;
+  padding: 6px;
+  border-radius: 5px;
+}
+.select-feedback button:hover {
+  background: var(--surface-2);
+}
+.library-source-select .select-trigger {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+@keyframes select-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-panel,
+  .select-loading span {
+    animation: none;
+  }
+  .select-chevron {
+    transition: none;
+  }
+}

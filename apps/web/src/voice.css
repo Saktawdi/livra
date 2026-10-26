@@ -1,0 +1,69 @@
+.voice-mode-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 18px 0;
+}
+.voice-mode-options button {
+  padding: 16px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: inherit;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+.voice-mode-options button.active {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.voice-mode-options strong {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 550;
+}
+.voice-mode-options small {
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 400;
+}
+.voice-mode-options span {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  opacity: 0.65;
+}
+.voice-summary-settings {
+  padding-block: 4px;
+}
+.voice-script {
+  margin-top: 16px;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+}
+.voice-script > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+.voice-script p {
+  line-height: 1.9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.voice-script small {
+  display: block;
+  opacity: 0.65;
+  line-height: 1.7;
+}
+@media (max-width: 560px) {
+  .voice-mode-options {
+    grid-template-columns: 1fr;
+  }
+}
